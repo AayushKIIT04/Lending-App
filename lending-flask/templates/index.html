@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lending Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+
+  <style>
+    /* ── Page-load animation ───────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .main-layout   { animation: fadeUp 0.35s 0.05s ease both; }
+    .daily-section { animation: fadeUp 0.35s 0.15s ease both; }
+    .slot-tabs     { animation: fadeUp 0.25s 0.02s ease both; }
+
+    /* ── Ripple on buttons ─────────────────────────── */
+    .btn-gold, .btn-ghost, .btn-carry-confirm {
+      position: relative; overflow: hidden;
+    }
+    .ripple {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.35);
+      transform: scale(0);
+      animation: rippleAnim 0.5s linear;
+      pointer-events: none;
+    }
+    @keyframes rippleAnim {
+      to { transform: scale(4); opacity: 0; }
+    }
+
+    /* ── Number counter animation ──────────────────── */
+    @keyframes numPop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.12); }
+      100% { transform: scale(1); }
+    }
+    .num-updated { animation: numPop 0.3s ease; }
+
+    /* ── Slot tab pill indicator ───────────────────── */
+    .slot-tab .tab-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.4;
+      margin-left: 5px;
+      vertical-align: middle;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .slot-tab.active .tab-dot { opacity: 1; transform: scale(1.2); }
+
+    /* ── Header month select style ─────────────────── */
+    #monthSelect {
+      background: linear-gradient(135deg, #FFFAE8, #FFF4CC);
+      border-color: var(--gold-border);
+      color: var(--gold);
+      font-weight: 700;
+      font-size: 0.84rem;
+      padding-right: 28px;
+    }
+
+    /* ── Gradient top strip on ledger table ────────── */
+    .table-wrapper {
+      border-top: 3px solid transparent;
+      border-image: linear-gradient(90deg, var(--gold-vivid), #EF9F27, var(--gold)) 1;
+    }
+
+    /* ── Summary panel animated border ────────────── */
+    .summary-panel {
+      border-top: 3px solid transparent;
+      border-image: linear-gradient(90deg, var(--emerald), #34D399) 1;
+    }
+
+    /* ── Pulsing dot for "today" ───────────────────── */
+    @keyframes pingDot {
+      0%   { box-shadow: 0 0 0 0 rgba(192,138,10,0.4); }
+      70%  { box-shadow: 0 0 0 6px rgba(192,138,10,0); }
+      100% { box-shadow: 0 0 0 0 rgba(192,138,10,0); }
+    }
+    .day-badge.today { animation: pingDot 2s ease infinite; }
+
+    /* ── Skeleton loader ───────────────────────────── */
+    @keyframes skeleton {
+      0%   { background-position: -200px 0; }
+      100% { background-position: calc(200px + 100%) 0; }
+    }
+    .skeleton-row td {
+      background: linear-gradient(90deg, #F0F4FF 25%, #E4EAFF 50%, #F0F4FF 75%);
+      background-size: 200px 100%;
+      animation: skeleton 1.4s infinite linear;
+      color: transparent !important;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════
+     HEADER
+═══════════════════════════════════════════════ -->
+<header class="header">
+  <div class="header-brand">
+    <div class="header-icon">₹</div>
+    <div>
+      <h1 class="header-title">Lending Manager</h1>
+      <p class="header-sub">Personal Finance Ledger</p>
+    </div>
+  </div>
+
+  <div class="header-controls">
+    <select id="monthSelect" class="input-dark"></select>
+
+    <button class="btn-carry" onclick="openCarryModal()" title="End of month carry forward">
+      <span style="font-size:1rem">📦</span>
+      End of Month
+    </button>
+
+    <button class="btn-gold" onclick="openAddModal()">
+      + Add Entry
+    </button>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════
+     SLOT TABS
+═══════════════════════════════════════════════ -->
+<div class="slot-tabs" id="slotTabs"></div>
+
+<!-- ═══════════════════════════════════════════════
+     MAIN LAYOUT
+═══════════════════════════════════════════════ -->
+<div class="main-layout">
+
+  <!-- TABLE SECTION -->
+  <div class="table-section">
+    <div class="table-header-row">
+      <h2 class="table-title" id="tableTitle">—</h2>
+      <span class="loading-text" id="loadingText" style="display:none">⏳ Loading…</span>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="ledger-table" id="ledgerTable">
+        <thead>
+          <tr>
+            <th class="text-center" style="width:40px">Sl#</th>
+            <th class="text-left">Opening Date</th>
+            <th class="text-left">Customer Name</th>
+            <th class="text-right">Funding</th>
+            <th class="text-right">Profit 28%</th>
+            <th class="text-right">Staff Comm 8%</th>
+            <th class="text-right">Total Due</th>
+            <th class="text-right">Payment Done</th>
+            <th class="text-right">Balance</th>
+            <th class="text-right">Net Income</th>
+            <th class="text-center">Status</th>
+            <th style="width:30px"></th>
+          </tr>
+        </thead>
+        <tbody id="ledgerBody"></tbody>
+        <tfoot id="ledgerFoot"></tfoot>
+      </table>
+    </div>
+    <p class="tip-text">✏️ Double-click any cell to edit inline</p>
+  </div>
+
+  <!-- SUMMARY SIDEBAR -->
+  <div class="sidebar">
+    <div class="summary-panel" id="summaryPanel" style="display:none">
+
+      <div class="summary-header">
+  <h3 class="summary-title">Monthly Summary</h3>
+  <span class="customer-badge" id="customerBadge">0 customers</span>
+</div>
+
+<!-- Closed accounts counter -->
+<div style="display:flex; gap:10px; margin-bottom:16px;">
+  <div class="mini-stat-card active-card">
+    <span class="mini-stat-num" id="activeCount">0</span>
+    <span class="mini-stat-label">Active</span>
+  </div>
+  <div class="mini-stat-card closed-card">
+    <span class="mini-stat-num" id="closedCount">0</span>
+    <span class="mini-stat-label">Closed</span>
+  </div>
+  <div class="mini-stat-card total-card">
+    <span class="mini-stat-num" id="totalCount">0</span>
+    <span class="mini-stat-label">Total</span>
+  </div>
+</div>
+
+      <div class="recovery-bar-wrap">
+        <div class="recovery-bar-labels">
+          <span class="text-muted">Recovery Progress</span>
+          <span class="text-green mono" id="recoveryPct">0%</span>
+        </div>
+        <div class="recovery-track">
+          <div class="recovery-fill" id="recoveryFill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="summary-rows" id="summaryRows"></div>
+
+      <div class="kothi-row">
+        <span class="kothi-label">🏦 Kothi Capital</span>
+        <span class="kothi-value mono" id="kothiValue">₹0</span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     DAILY COLLECTIONS
+═══════════════════════════════════════════════ -->
+<div class="daily-section" id="dailySection">
+  <div class="daily-header">
+    <div class="daily-header-left">
+      <h2 class="daily-title">📅 Daily Collections</h2>
+      <span class="daily-subtitle" id="dailySubtitle">—</span>
+    </div>
+    <div class="daily-stats" id="dailyStats"></div>
+  </div>
+
+  <div class="daily-grid-wrap">
+    <table class="daily-table">
+      <thead>
+        <tr>
+          <th class="text-center">Day</th>
+          <th class="text-left">Date</th>
+          <th class="text-right">Target / Day</th>
+          <th class="text-right">Collected</th>
+          <th class="text-right">Difference</th>
+          <th class="text-right">Cumulative</th>
+        </tr>
+      </thead>
+      <tbody id="dailyBody"></tbody>
+      <tfoot id="dailyFoot"></tfoot>
+    </table>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     ADD CUSTOMER MODAL
+═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="addModal" style="display:none" onclick="handleOverlayClick(event)">
+  <div class="modal-box">
+    <h2 class="modal-title">✨ Add New Customer</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Customer Name</label>
+        <input class="input-dark" id="f_name" placeholder="e.g. Sunita Mishra" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Opening Date</label>
+        <input type="date" class="input-dark" id="f_date" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Funding Amount (₹)</label>
+        <input type="number" class="input-dark" id="f_funding" placeholder="e.g. 10000" oninput="updateCalcPreview()" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Received So Far (₹)</label>
+        <input type="number" class="input-dark" id="f_payment" placeholder="0" oninput="updateCalcPreview()" />
+      </div>
+    </div>
+
+    <div class="calc-preview" id="calcPreview" style="display:none">
+      <p class="calc-label">⚡ Auto-calculated preview</p>
+      <div class="calc-grid">
+        <span class="text-muted">28% Profit:</span>   <span class="text-green mono" id="c_profit">₹0</span>
+        <span class="text-muted">8% Commission:</span> <span class="text-yellow mono" id="c_comm">₹0</span>
+        <span class="text-muted">Total Due:</span>     <span class="text-rupee mono" id="c_due">₹0</span>
+        <span class="text-muted">Balance Left:</span>  <span class="text-red mono" id="c_bal">₹0</span>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeAddModal()">Cancel</button>
+      <button class="btn-gold" onclick="submitAddCustomer()">Add Entry</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     CARRY FORWARD MODAL
+═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="carryModal" style="display:none" onclick="handleCarryOverlayClick(event)">
+  <div class="modal-box" style="max-width:490px">
+    <h2 class="modal-title">📦 End of Month — Carry Forward</h2>
+
+    <div class="carry-warning">
+      ⚠️ <strong>Perform this only at the end of the month.</strong>
+      Active customers will be copied to the next month with payment reset to ₹0.
+      Closed customers will <em>NOT</em> be transferred.
+    </div>
+
+    <div class="carry-info" id="carryInfo"></div>
+
+    <div class="form-grid" style="margin-top:18px">
+      <div class="form-group">
+        <label class="form-label">From Month</label>
+        <input class="input-dark" id="carry_from" readonly style="opacity:0.6;cursor:not-allowed" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">To Month (auto-calculated)</label>
+        <input class="input-dark" id="carry_to" readonly style="opacity:0.6;cursor:not-allowed" />
+      </div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:24px">
+      <button class="btn-ghost" onclick="closeCarryModal()">Cancel</button>
+      <button class="btn-carry-confirm" id="carryConfirmBtn" onclick="submitCarryForward()">
+        ✅ Carry Forward Active Customers
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ TOAST ═══════════════════════════════════ -->
+<div id="toast" class="toast" style="display:none"></div>
+
+
+<!-- ═══ RIPPLE SCRIPT ════════════════════════════ -->
+<script>
+  /* Ripple effect on all buttons */
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-gold, .btn-carry-confirm, .btn-ghost');
+    if (!btn) return;
+    const r = document.createElement('span');
+    r.className = 'ripple';
+    const rect = btn.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    r.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX-rect.left-size/2}px;top:${e.clientY-rect.top-size/2}px`;
+    btn.appendChild(r);
+    setTimeout(() => r.remove(), 600);
+  });
+</script>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

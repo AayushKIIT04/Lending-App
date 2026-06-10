@@ -1,0 +1,630 @@
+// ─── State ──────────────────────────────────────────────────────────
+let slots = [];
+let activeSlotId = 1;
+let monthYear = currentMonthYear();
+let customers = [];
+let summary = null;
+let editingCell = null; // { id, field }
+
+// ─── Helpers ────────────────────────────────────────────────────────
+function fmt(n) {
+  return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+function fmtDate(d) {
+  if (!d) return '';
+  const date = new Date(d);
+  return `${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')}.${String(date.getFullYear()).slice(2)}`;
+}
+function monthLabel(my) {
+  const [y, m] = my.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(m)-1]} ${y}`;
+}
+function currentMonthYear() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+}
+
+// ─── API ─────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opts);
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
+  return res.json();
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type}`;
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// ─── Month selector ──────────────────────────────────────────────────
+function buildMonthSelector() {
+  const sel = document.getElementById('monthSelect');
+  sel.innerHTML = '';
+  const now = new Date();
+  for (let i = 5; i >= -6; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = monthLabel(val);
+    if (val === monthYear) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener('change', () => { monthYear = sel.value; loadData(); });
+}
+
+// ─── Slot tabs ───────────────────────────────────────────────────────
+function renderSlotTabs() {
+  const container = document.getElementById('slotTabs');
+  container.innerHTML = '';
+  slots.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'slot-tab' + (s.id === activeSlotId ? ' active' : '');
+    btn.textContent = s.slot_name;
+    btn.addEventListener('click', () => { activeSlotId = s.id; renderSlotTabs(); loadData(); });
+    container.appendChild(btn);
+  });
+}
+
+// ─── Load data ───────────────────────────────────────────────────────
+async function loadData() {
+  const slot = slots.find(s => s.id === activeSlotId);
+  document.getElementById('tableTitle').textContent =
+    `${slot ? slot.slot_name : ''} — ${monthLabel(monthYear)}`;
+  document.getElementById('loadingText').style.display = 'inline';
+  try {
+    const [cust, sum] = await Promise.all([
+      api('GET', `/customers/${activeSlotId}/${monthYear}`),
+      api('GET', `/slots/summary/${activeSlotId}/${monthYear}`)
+    ]);
+    customers = cust;
+    summary = sum;
+    renderTable();
+    renderSummary();
+    await loadDailyCollections();
+  } catch (e) {
+    showToast('Failed to load data', 'error');
+  } finally {
+    document.getElementById('loadingText').style.display = 'none';
+  }
+}
+
+// ─── Render table ────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('ledgerBody');
+  const tfoot = document.getElementById('ledgerFoot');
+  tbody.innerHTML = '';
+  tfoot.innerHTML = '';
+
+  if (customers.length === 0) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="12">No entries for this month. Click <strong>+ Add Entry</strong> to begin.</td></tr>`;
+    return;
+  }
+
+  customers.forEach((c) => {
+    const tr = document.createElement('tr');
+    if (c.is_closed) tr.classList.add('closed');
+    tr.dataset.id = c.id;
+
+    const balClass = Number(c.balance_recovery) > 0 ? 'text-red' : 'text-green';
+
+    tr.innerHTML = `
+      <td class="text-center text-muted">${c.sl_no}</td>
+      <td class="editable text-left" data-field="opening_date" data-val="${c.opening_date || ''}">${fmtDate(c.opening_date)}</td>
+      <td class="editable text-left" data-field="customer_name" data-val="${escHtml(c.customer_name)}">${escHtml(c.customer_name)}</td>
+      <td class="editable text-right" data-field="funding" data-val="${c.funding}">₹${fmt(c.funding)}</td>
+      <td class="text-right text-green">₹${fmt(c.profit_28_percent)}</td>
+      <td class="text-right text-yellow">₹${fmt(c.staff_commission)}</td>
+      <td class="text-right text-purple">₹${fmt(c.total_payment_to_be_made)}</td>
+      <td class="editable text-right" data-field="payment_has_been_done" data-val="${c.payment_has_been_done}">₹${fmt(c.payment_has_been_done)}</td>
+      <td class="text-right font-mono ${balClass}">₹${fmt(c.balance_recovery)}</td>
+      <td class="text-right text-rupee">₹${fmt(c.net_income)}</td>
+      <td class="text-center">
+        <button class="status-btn ${c.is_closed ? 'status-closed' : 'status-active'}" data-id="${c.id}" data-closed="${c.is_closed}">
+          ${c.is_closed ? 'Closed' : 'Active'}
+        </button>
+      </td>
+      <td class="text-center"><button class="del-btn" data-id="${c.id}" title="Delete">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Double-click to edit
+  tbody.querySelectorAll('td.editable').forEach(td => {
+    td.addEventListener('dblclick', () => startInlineEdit(td));
+  });
+
+  // Status toggle
+  tbody.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      const c = customers.find(x => x.id === id);
+      try {
+        await api('PUT', `/customers/${id}`, { is_closed: c.is_closed ? 0 : 1 });
+        await loadData();
+      } catch { showToast('Update failed', 'error'); }
+    });
+  });
+
+  // Delete
+  tbody.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this entry?')) return;
+      try {
+        await api('DELETE', `/customers/${btn.dataset.id}`);
+        showToast('Deleted');
+        await loadData();
+      } catch { showToast('Delete failed', 'error'); }
+    });
+  });
+  // ─── Active / Closed / Total counts ──────────────
+  const activeCount = customers.filter(c => !c.is_closed).length;
+  const closedCount = customers.filter(c =>  c.is_closed).length;
+  const elActive = document.getElementById('activeCount');
+  const elClosed = document.getElementById('closedCount');
+  const elTotal  = document.getElementById('totalCount');
+  if (elActive) elActive.textContent = activeCount;
+  if (elClosed) elClosed.textContent = closedCount;
+  if (elTotal)  elTotal.textContent  = customers.length;
+
+  // Totals footer
+ 
+
+  // Totals footer
+  if (summary) {
+    tfoot.innerHTML = `<tr>
+      <td colspan="3" class="text-right text-muted" style="font-size:0.75rem;padding-right:12px">TOTALS</td>
+      <td class="text-right text-blue" style="font-weight:700">₹${fmt(summary.this_month_funding)}</td>
+      <td class="text-right text-green" style="font-weight:700">₹${fmt(summary.total_profit_28)}</td>
+      <td class="text-right text-yellow" style="font-weight:700">₹${fmt(summary.total_staff_commission)}</td>
+      <td class="text-right text-purple" style="font-weight:700">₹${fmt(summary.total_funding_and_profit)}</td>
+      <td class="text-right text-slate2" style="font-weight:700">₹${fmt(summary.actual_recovery)}</td>
+      <td class="text-right text-red" style="font-weight:700">₹${fmt(summary.total_balance_recovery)}</td>
+      <td class="text-right text-rupee" style="font-weight:700">₹${fmt(summary.total_net_income)}</td>
+      <td colspan="2"></td>
+    </tr>`;
+  }
+}
+
+// ─── Inline edit ────────────────────────────────────────────────────
+function startInlineEdit(td) {
+  cancelInlineEdit();
+
+  const tr = td.closest('tr');
+  const id = parseInt(tr.dataset.id);
+  const field = td.dataset.field;
+  const val = td.dataset.val;
+
+  editingCell = { id, field, td };
+  const isName = field === 'customer_name';
+  const isDate = field === 'opening_date';
+
+  const input = document.createElement('input');
+  input.className = isName ? 'inline-input-name' : 'inline-input';
+  input.type = isDate ? 'date' : (isName ? 'text' : 'number');
+  input.value = val || '';
+  if (isName || isDate) input.style.textAlign = 'left';
+
+  td.textContent = '';
+  td.appendChild(input);
+  input.focus();
+
+  input.addEventListener('blur', () => commitEdit(input.value));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') commitEdit(input.value);
+    if (e.key === 'Escape') cancelInlineEdit();
+  });
+}
+
+function cancelInlineEdit() {
+  if (!editingCell) return;
+  const { id, field, td } = editingCell;
+  const c = customers.find(x => x.id === id);
+  if (c) {
+    const display = field === 'opening_date' ? fmtDate(c[field]) : (field === 'customer_name' ? escHtml(c[field]) : `₹${fmt(c[field])}`);
+    td.innerHTML = display;
+  }
+  editingCell = null;
+}
+
+async function commitEdit(newVal) {
+  if (!editingCell) return;
+  const { id, field, td } = editingCell;
+  editingCell = null;
+  try {
+    await api('PUT', `/customers/${id}`, { [field]: newVal });
+    const c = customers.find(x => x.id === id);
+    if (c) {
+      c[field] = newVal;
+      if (['funding', 'payment_has_been_done'].includes(field)) {
+        const f = Number(c.funding);
+        c.profit_28_percent = (f * 0.28).toFixed(2);
+        c.staff_commission = (f * 0.08).toFixed(2);
+        c.net_income = (f * 0.20).toFixed(2);
+        c.total_payment_to_be_made = (f * 1.28).toFixed(2);
+        c.balance_recovery = (f * 1.28 - Number(c.payment_has_been_done)).toFixed(2);
+      }
+    }
+    renderTable();
+    summary = await api('GET', `/slots/summary/${activeSlotId}/${monthYear}`);
+    renderSummary();
+  } catch {
+    showToast('Update failed', 'error');
+    renderTable();
+  }
+}
+
+// ─── Summary panel ───────────────────────────────────────────────────
+function renderSummary() {
+  const panel = document.getElementById('summaryPanel');
+  if (!summary) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  document.getElementById('customerBadge').textContent = `${summary.total_customers || 0} customers`;
+
+  const total = Number(summary.total_funding_and_profit) || 0;
+  const recovered = Number(summary.actual_recovery) || 0;
+  const pct = total > 0 ? Math.min((recovered / total * 100), 100).toFixed(1) : 0;
+  document.getElementById('recoveryPct').textContent = `${pct}%`;
+  document.getElementById('recoveryFill').style.width = `${pct}%`;
+
+  const slot = slots.find(s => s.id === activeSlotId);
+  document.getElementById('kothiValue').textContent = `₹${fmt(slot?.kothi_amount)}`;
+
+  const rows = [
+    { label: 'This Month Funding',    val: summary.this_month_funding,      color: 'text-blue' },
+    { label: 'Total Running Funding', val: summary.running_funding,          color: 'text-sky' },
+    { label: 'Total Funding + Profit',val: summary.total_funding_and_profit, color: 'text-purple' },
+    { label: 'Actual Recovery',       val: summary.actual_recovery,          color: 'text-green' },
+    { label: 'Balance Recovery',      val: summary.total_balance_recovery,   color: 'text-red' },
+    { label: 'Total Profit (28%)',    val: summary.total_profit_28,          color: 'text-emerald' },
+    { label: 'Staff Commission (8%)', val: summary.total_staff_commission,   color: 'text-yellow' },
+    { label: 'Net Income (20%)',      val: summary.total_net_income,         color: 'text-rupee' },
+  ];
+
+  document.getElementById('summaryRows').innerHTML = rows.map(r => `
+    <div class="summary-row">
+      <span class="summary-row-label">${r.label}</span>
+      <span class="summary-row-val ${r.color}">₹${fmt(r.val)}</span>
+    </div>
+  `).join('');
+}
+
+// ─── Add Customer Modal ──────────────────────────────────────────────
+function openAddModal() {
+  document.getElementById('f_name').value = '';
+  document.getElementById('f_date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('f_funding').value = '';
+  document.getElementById('f_payment').value = '';
+  document.getElementById('calcPreview').style.display = 'none';
+  document.getElementById('addModal').style.display = 'flex';
+}
+function closeAddModal() {
+  document.getElementById('addModal').style.display = 'none';
+}
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('addModal')) closeAddModal();
+}
+function updateCalcPreview() {
+  const f = Number(document.getElementById('f_funding').value) || 0;
+  const p = Number(document.getElementById('f_payment').value) || 0;
+  if (f <= 0) { document.getElementById('calcPreview').style.display = 'none'; return; }
+  document.getElementById('calcPreview').style.display = 'block';
+  document.getElementById('c_profit').textContent = `₹${fmt(f * 0.28)}`;
+  document.getElementById('c_comm').textContent   = `₹${fmt(f * 0.08)}`;
+  document.getElementById('c_due').textContent    = `₹${fmt(f * 1.28)}`;
+  document.getElementById('c_bal').textContent    = `₹${fmt(f * 1.28 - p)}`;
+}
+async function submitAddCustomer() {
+  const name    = document.getElementById('f_name').value.trim();
+  const date    = document.getElementById('f_date').value;
+  const funding = document.getElementById('f_funding').value;
+  const payment = document.getElementById('f_payment').value || 0;
+  if (!name || !funding) { showToast('Customer name and funding are required', 'error'); return; }
+  try {
+    await api('POST', '/customers', {
+      slot_id: activeSlotId,
+      month_year: monthYear,
+      customer_name: name,
+      opening_date: date,
+      funding: Number(funding),
+      payment_has_been_done: Number(payment),
+    });
+    showToast('Customer added!');
+    closeAddModal();
+    await loadData();
+  } catch (e) {
+    showToast(e.message || 'Error adding customer', 'error');
+  }
+}
+
+// ─── Util ────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Init ────────────────────────────────────────────────────────────
+async function init() {
+  buildMonthSelector();
+  try {
+    slots = await api('GET', '/slots');
+    if (slots.length) activeSlotId = slots[0].id;
+    renderSlotTabs();
+    await loadData();
+  } catch {
+    showToast('Could not connect to server', 'error');
+  }
+}
+
+init();
+
+// ─── Daily Collections ───────────────────────────────────────────────
+let dailyData = [];
+let saveTimers = {};
+
+function getDaysInMonth(my) {
+  const [y, m] = my.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+function getDateForDay(my, day) {
+  const [y, m] = my.split('-').map(Number);
+  const d = new Date(y, m - 1, day);
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', weekday: 'short' });
+}
+
+function isToday(my, day) {
+  const now = new Date();
+  const [y, m] = my.split('-').map(Number);
+  return now.getFullYear() === y && (now.getMonth() + 1) === m && now.getDate() === day;
+}
+
+function isFuture(my, day) {
+  const now = new Date();
+  const [y, m] = my.split('-').map(Number);
+  const target = new Date(y, m - 1, day);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return target > today;
+}
+
+async function loadDailyCollections() {
+  try {
+    dailyData = await api('GET', `/daily-collections/${activeSlotId}/${monthYear}`);
+  } catch {
+    dailyData = [];
+  }
+  renderDailyCollections();
+}
+
+function renderDailyCollections() {
+  const totalDue = summary ? (Number(summary.total_funding_and_profit) || 0) : 0;
+  const dailyTarget = totalDue > 0 ? (totalDue / 64) : 0;
+  const daysInMonth = getDaysInMonth(monthYear);
+  const slot = slots.find(s => s.id === activeSlotId);
+
+  document.getElementById('dailySubtitle').textContent =
+    `${slot ? slot.slot_name : ''} — ${monthLabel(monthYear)} — Total Due ÷ 64 days`;
+
+  const tbody = document.getElementById('dailyBody');
+  const tfoot = document.getElementById('dailyFoot');
+  tbody.innerHTML = '';
+  tfoot.innerHTML = '';
+
+  let cumulative = 0;
+  let totalCollected = 0;
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const rec = dailyData.find(d => d.day_number === day);
+    const collected = Number(rec?.amount_collected || 0);
+    cumulative += collected;
+    totalCollected += collected;
+
+    const diff = collected - dailyTarget;
+    const diffClass = diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : 'diff-zero';
+    const diffStr = collected === 0 ? '<span class="diff-zero">—</span>' :
+      `<span class="${diffClass}">${diff >= 0 ? '+' : ''}₹${fmt(Math.abs(diff))}</span>`;
+
+    const future = isFuture(monthYear, day);
+    const todayBadge = isToday(monthYear, day) ? ' today' : '';
+
+    const tr = document.createElement('tr');
+    if (future) tr.classList.add('future-row');
+    tr.innerHTML = `
+      <td class="text-center"><span class="day-badge${todayBadge}">${day}</span></td>
+      <td class="text-left text-muted" style="font-size:0.78rem">${getDateForDay(monthYear, day)}</td>
+      <td class="text-right text-muted">₹${fmt(dailyTarget)}</td>
+      <td class="text-right" style="padding:4px 12px">
+        <input
+          class="collect-input"
+          type="number"
+          value="${collected || ''}"
+          placeholder="0"
+          data-day="${day}"
+          ${future ? 'disabled' : ''}
+        />
+      </td>
+      <td class="text-right">${collected === 0 && !future ? diffStr : (future ? '' : diffStr)}</td>
+      <td class="text-right ${cumulative >= dailyTarget * day ? 'text-green' : 'text-red'}">₹${fmt(cumulative)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  tbody.querySelectorAll('.collect-input').forEach(input => {
+    input.addEventListener('input', () => {
+      const day = parseInt(input.dataset.day);
+      clearTimeout(saveTimers[day]);
+      saveTimers[day] = setTimeout(() => saveDaily(day, input.value), 800);
+    });
+    input.addEventListener('blur', () => {
+      const day = parseInt(input.dataset.day);
+      clearTimeout(saveTimers[day]);
+      saveDaily(day, input.value);
+    });
+  });
+
+  const overallDiff = totalCollected - (dailyTarget * daysInMonth);
+  const pct = totalDue > 0 ? Math.min((totalCollected / totalDue * 100), 100).toFixed(1) : 0;
+  document.getElementById('dailyStats').innerHTML = `
+    <div class="daily-stat">
+      <span class="daily-stat-label">Daily Target</span>
+      <span class="daily-stat-val text-rupee">₹${fmt(dailyTarget)}</span>
+    </div>
+    <div class="daily-stat">
+      <span class="daily-stat-label">Total Collected</span>
+      <span class="daily-stat-val text-green">₹${fmt(totalCollected)}</span>
+    </div>
+    <div class="daily-stat">
+      <span class="daily-stat-label">Total Due</span>
+      <span class="daily-stat-val text-purple">₹${fmt(totalDue)}</span>
+    </div>
+    <div class="daily-stat">
+      <span class="daily-stat-label">Progress</span>
+      <span class="daily-stat-val ${Number(pct) >= 50 ? 'text-green' : 'text-red'}">${pct}%</span>
+    </div>
+  `;
+
+  tfoot.innerHTML = `<tr>
+    <td colspan="2" class="text-right text-muted" style="font-size:0.72rem">TOTALS</td>
+    <td class="text-right text-muted">₹${fmt(dailyTarget * daysInMonth)}</td>
+    <td class="text-right text-green">₹${fmt(totalCollected)}</td>
+    <td class="text-right ${overallDiff >= 0 ? 'text-green' : 'text-red'}">
+      ${overallDiff >= 0 ? '+' : ''}₹${fmt(overallDiff)}
+    </td>
+    <td class="text-right text-purple">₹${fmt(cumulative)}</td>
+  </tr>`;
+}
+
+async function saveDaily(day, value) {
+  const amount = Number(value) || 0;
+  try {
+    await api('POST', '/daily-collections', {
+      slot_id: activeSlotId,
+      month_year: monthYear,
+      day_number: day,
+      amount,
+    });
+    const idx = dailyData.findIndex(d => d.day_number === day);
+    if (idx >= 0) dailyData[idx].amount_collected = amount;
+    else dailyData.push({ day_number: day, amount_collected: amount });
+    renderDailyCollections();
+  } catch {
+    showToast('Failed to save', 'error');
+  }
+}
+
+// ─── Carry Forward (End of Month) ────────────────────────────────────
+function openCarryModal() {
+  if (!activeSlotId || !monthYear) {
+    showToast('Please select a slot and month first.', 'error');
+    return;
+  }
+
+  // Calculate next month
+  const [y, m] = monthYear.split('-').map(Number);
+  const nextDate = new Date(y, m, 1); // new Date(y, m) = first day of next month
+  const toMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+
+  document.getElementById('carry_from').value = monthLabel(monthYear);
+  document.getElementById('carry_to').value   = monthLabel(toMonth);
+
+  // Count active vs closed from the rendered table
+  const rows = Array.from(document.querySelectorAll('#ledgerBody tr'));
+  let active = 0;
+  let closed = 0;
+  rows.forEach(r => {
+    if (r.classList.contains('empty-row')) return;
+    if (r.classList.contains('closed')) closed++;
+    else active++;
+  });
+
+  const info = document.getElementById('carryInfo');
+  info.innerHTML = `
+    <div class="carry-counts">
+      <div class="carry-count-item carry-count-active">
+        <span class="carry-count-num">${active}</span>
+        <span class="carry-count-label">Active — Will be copied</span>
+      </div>
+      <div class="carry-count-item carry-count-closed">
+        <span class="carry-count-num">${closed}</span>
+        <span class="carry-count-label">Closed — Will be skipped</span>
+      </div>
+    </div>
+  `;
+
+  const confirmBtn = document.getElementById('carryConfirmBtn');
+  if (active === 0) {
+    confirmBtn.disabled = true;
+    info.innerHTML += `<p style="color:#f87171;font-size:0.78rem;margin-top:10px;text-align:center;">
+      No active customers found to carry forward.
+    </p>`;
+  } else {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '✅ Carry Forward Active Customers';
+  }
+
+  document.getElementById('carryModal').style.display = 'flex';
+}
+
+function closeCarryModal() {
+  document.getElementById('carryModal').style.display = 'none';
+}
+
+function handleCarryOverlayClick(e) {
+  if (e.target === document.getElementById('carryModal')) closeCarryModal();
+}
+
+async function submitCarryForward() {
+  const [y, m] = monthYear.split('-').map(Number);
+  const nextDate = new Date(y, m, 1);
+  const toMonth  = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+
+  const btn = document.getElementById('carryConfirmBtn');
+  btn.disabled    = true;
+  btn.textContent = 'Copying…';
+
+  try {
+    const res = await fetch('/api/carry-forward', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slot_id:    activeSlotId,
+        from_month: monthYear,
+        to_month:   toMonth,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+
+    showToast('✅ ' + data.message, 'success');
+    closeCarryModal();
+
+    // Offer to jump to next month
+    setTimeout(() => {
+      if (confirm(`Carry forward complete!\n\n${data.message}\n\nSwitch to ${monthLabel(toMonth)} now?`)) {
+        const sel = document.getElementById('monthSelect');
+        let opt = Array.from(sel.options).find(o => o.value === toMonth);
+        if (!opt) {
+          opt = new Option(monthLabel(toMonth), toMonth);
+          sel.insertBefore(opt, sel.options[0]);
+        }
+        sel.value  = toMonth;
+        monthYear  = toMonth;
+        loadData();
+      }
+    }, 300);
+
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+    btn.disabled    = false;
+    btn.textContent = '✅ Carry Forward Active Customers';
+  }
+}
