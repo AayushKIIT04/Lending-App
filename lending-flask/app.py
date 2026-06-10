@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from decimal import Decimal
 import json
+import tempfile
 
 load_dotenv()
 
@@ -16,12 +17,27 @@ CORS(app)
 
 # ─── DB connection ────────────────────────────────────────────────────────────
 def get_db():
-    return mysql.connector.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "lending_db"),
-    )
+    ssl_ca = os.getenv("DB_SSL_CA", "")
+    
+    ssl_ca_path = None
+    if ssl_ca.strip().startswith("-----BEGIN"):
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode='w')
+        tmp.write(ssl_ca)
+        tmp.close()
+        ssl_ca_path = tmp.name
+
+    config = {
+        "host": os.getenv("DB_HOST", "localhost"),
+        "port": int(os.getenv("DB_PORT", 3306)),
+        "user": os.getenv("DB_USER", "root"),
+        "password": os.getenv("DB_PASSWORD", ""),
+        "database": os.getenv("DB_NAME", "lending_db"),
+    }
+    if ssl_ca_path:
+        config["ssl_ca"] = ssl_ca_path
+        config["ssl_verify_cert"] = True
+
+    return mysql.connector.connect(**config)
 
 import datetime
 
@@ -232,11 +248,6 @@ def upsert_daily_collection():
 # ─── CARRY FORWARD (End of Month) ────────────────────────────────────────────
 @app.route("/api/carry-forward", methods=["POST"])
 def carry_forward():
-    """
-    Copies all ACTIVE (is_closed=0) customers from source month to target month.
-    Resets payment_has_been_done=0 and daily_recovery=0 for the new month.
-    Skips any customer already existing in target month (safe to re-run).
-    """
     data       = request.json
     slot_id    = data.get("slot_id")
     from_month = data.get("from_month")
