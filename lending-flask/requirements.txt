@@ -3,3 +3,4 @@ flask-cors
 mysql-connector-python
 python-dotenv
 gunicorn==23.0.0
+openpyxl
