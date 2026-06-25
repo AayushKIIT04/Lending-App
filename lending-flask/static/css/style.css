@@ -166,6 +166,14 @@ body::after {
 .header-controls { display: flex; align-items: center; gap: 10px; }
 
 /* ─── Slot Tabs ─────────────────────────────────────────────── */
+.slot-rename-input {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-border, #C08A0A);
+  outline: none;
+  min-width: 90px;
+}
 .slot-tabs {
   background: rgba(255,255,255,0.7);
   backdrop-filter: blur(12px);
@@ -249,10 +257,19 @@ body::after {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-sm);
-  overflow: hidden;
+}
+.table-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--gold-border);
+  border-radius: 99px;
+}
+.table-wrapper::-webkit-scrollbar-track {
+  background: var(--surface-2);
 }
 
-.ledger-table { width: 100%; border-collapse: collapse; }
+.ledger-table { width: 100%; }
 
 .ledger-table thead {
   background: linear-gradient(135deg, #F0F4FF 0%, #EEF3FF 100%);
@@ -704,7 +721,7 @@ select.input-dark { width: auto; min-width: 138px; cursor: pointer; }
 .daily-stat-val { font-size: 0.95rem; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--ink); }
 
 .daily-grid-wrap { overflow-x: auto; }
-.daily-table { width: 100%; border-collapse: collapse; }
+.daily-table { width: 100% }
 .daily-table th {
   background: var(--surface-2);
   color: var(--ink-soft);
@@ -903,3 +920,411 @@ select.input-dark { width: auto; min-width: 138px; cursor: pointer; }
 }
 .total-card .mini-stat-num   { color: var(--sapphire); }
 .total-card .mini-stat-label { color: var(--sapphire); opacity: 0.7; }
+
+/* Responsive design*/
+
+@media (max-width: 900px) {
+  .main-layout {
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+  }
+  .sidebar {
+    width: 100%;
+  }
+  .summary-panel {
+    position: static; /* remove sticky on mobile, it eats screen space */
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .header-controls {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-controls > * {
+    flex: 1;
+    min-width: 110px;
+  }
+  .btn-gold, .btn-carry {
+    font-size: 0.74rem;
+    padding: 8px 12px;
+  }
+  select.input-dark {
+    width: 100%;
+    min-width: 0;
+  }
+}
+@media (max-width: 640px) {
+  .slot-tabs {
+    padding: 0 12px;
+    top: auto; /* sticky positioning gets messy when header wraps; safer to unstick on small screens */
+    position: relative;
+  }
+  .slot-tab {
+    padding: 12px 14px;
+    font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .ledger-table td, .ledger-table th {
+    padding: 9px 10px;
+    font-size: 0.78rem;
+  }
+  .daily-table td, .daily-table th {
+    padding: 7px 10px;
+    font-size: 0.76rem;
+  }
+  .table-title {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .daily-section {
+    margin: 0 12px 24px;
+  }
+  .daily-header {
+    padding: 14px 16px;
+  }
+  .daily-stats {
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .daily-stat {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal-box {
+    max-width: 92vw;
+    padding: 22px;
+    margin: 16px;
+  }
+  .modal-actions {
+    flex-direction: column;
+  }
+  .calc-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 400px) {
+  .mini-stat-num {
+    font-size: 1.3rem;
+  }
+  .mini-stat-label {
+    font-size: 0.58rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: none;
+  }
+}
+
+/*weclome page style*/
+/* ─── Welcome View ──────────────────────────────────────────── */
+.welcome-view {
+  padding: 36px 28px;
+  position: relative;
+  z-index: 1;
+}
+.welcome-intro {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.welcome-title {
+  font-family: 'Sora', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.welcome-subtitle {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin-top: 6px;
+}
+
+.slot-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.slot-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 22px 20px;
+  box-shadow: var(--sh-sm);
+  cursor: pointer;
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.slot-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--sh-md);
+  border-color: var(--gold-border);
+}
+
+.slot-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(135deg, #D4A011 0%, #A87008 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  box-shadow: var(--sh-gold);
+}
+
+.slot-card-name {
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.slot-card-kothi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+}
+.slot-card-kothi-label {
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.slot-card-kothi-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--gold);
+  font-size: 0.85rem;
+}
+
+.slot-card-cta {
+  margin-top: auto;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'Sora', sans-serif;
+}
+
+/* Mobile responsiveness for welcome view */
+@media (max-width: 640px) {
+  .welcome-view {
+    padding: 22px 16px;
+  }
+  .welcome-title {
+    font-size: 1.25rem;
+  }
+  .slot-card-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .slot-card {
+    padding: 16px 14px;
+  }
+  .slot-card-name {
+    font-size: 0.88rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .slot-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+ 
+.ledger-table,
+.daily-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* ─── Editable cell indicator (persistent, not just on hover) ─── */
+td.editable {
+  cursor: pointer;
+  position: relative;
+  background: linear-gradient(135deg, rgba(192,138,10,0.05), rgba(192,138,10,0.02));
+  border-left: 2px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+/* Small corner mark to signal "editable" at a glance, even at rest */
+td.editable::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 7px 7px 0;
+  border-color: transparent var(--gold-border) transparent transparent;
+  opacity: 0.6;
+}
+
+td.editable:hover {
+  background: var(--gold-bg) !important;
+  border-left-color: var(--gold);
+}
+
+td.editable:hover::after {
+  opacity: 1;
+}
+
+
+.table-wrapper {
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+ 
+.daily-grid-wrap {
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+ 
+.ledger-table,
+.daily-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+ 
+.ledger-table thead th,
+.daily-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(135deg, #F0F4FF 0%, #EEF3FF 100%);
+  box-shadow: 0 2px 4px rgba(13,27,62,0.06);
+}
+ 
+.daily-table thead th {
+  background: var(--surface-2);
+}
+.ledger-table th {
+  padding: 9px 13px;
+}
+
+.ledger-table td {
+  padding: 6px 13px;
+  font-weight: 600;
+}
+
+.daily-table th {
+  padding: 7px 14px;
+}
+
+.daily-table td {
+  padding: 5px 14px;
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NEW — Devanam/Pawana daily ledger additions
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Missing color helpers (used by app.js but absent from base CSS) */
+.text-purple { color: var(--violet); }
+.text-sky    { color: var(--sapphire); }
+.text-emerald{ color: var(--emerald); }
+
+/* Opening Pawana box (manual "previous month closing amount") */
+.opening-pawana-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 22px;
+  background: linear-gradient(135deg, #FFFAE8 0%, #FFF4CC 100%);
+  border-bottom: 1px solid var(--gold-border);
+}
+.opening-pawana-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'Sora', sans-serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.opening-pawana-input {
+  background: var(--surface);
+  border: 1.5px solid var(--gold-border);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: var(--r-sm);
+  width: 160px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.opening-pawana-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192,138,10,0.15);
+}
+.opening-pawana-hint {
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .opening-pawana-box {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .opening-pawana-input {
+    width: 100%;
+  }
+}
+
+/* ─── Target / % Achieved column ─────────────────────────────── */
+.target-val { color: var(--ink-mid); font-weight: 600; }
+
+.achieved-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+.achieved-good   { background: var(--emerald-bg); color: var(--emerald); border: 1px solid var(--emerald-bd); }
+.achieved-mid    { background: var(--gold-bg);    color: var(--gold);    border: 1px solid var(--gold-border); }
+.achieved-low    { background: var(--ruby-bg);    color: var(--ruby);    border: 1px solid var(--ruby-bd); }

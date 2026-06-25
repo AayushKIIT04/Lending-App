@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lending Manager</title>
+  <title>Loan Express — Lending Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/style.css" />
@@ -41,20 +41,6 @@
       100% { transform: scale(1); }
     }
     .num-updated { animation: numPop 0.3s ease; }
-
-    /* ── Slot tab pill indicator ───────────────────── */
-    .slot-tab .tab-dot {
-      display: inline-block;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      opacity: 0.4;
-      margin-left: 5px;
-      vertical-align: middle;
-      transition: opacity 0.2s, transform 0.2s;
-    }
-    .slot-tab.active .tab-dot { opacity: 1; transform: scale(1.2); }
 
     /* ── Header month select style ─────────────────── */
     #monthSelect {
@@ -97,19 +83,460 @@
       animation: skeleton 1.4s infinite linear;
       color: transparent !important;
     }
+
+    /* ── Target / % Achieved column ────────────────── */
+    .target-val { color: var(--ink-mid); font-weight: 600; }
+    .achieved-badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .achieved-good { background: var(--emerald-bg); color: var(--emerald); border: 1px solid var(--emerald-bd); }
+    .achieved-mid  { background: var(--gold-bg);    color: var(--gold);    border: 1px solid var(--gold-border); }
+    .achieved-low  { background: var(--ruby-bg);    color: var(--ruby);    border: 1px solid var(--ruby-bd); }
+/* ── Closed funding summary row ── */
+.summary-row-closed {
+  background: rgba(100, 116, 139, 0.07);
+  border-left: 3px solid #64748b;
+  border-radius: 6px;
+  padding-left: 10px !important;
+}
+/* ── Drag-and-drop row reordering ── */
+tr[draggable="true"] {
+  cursor: grab;
+}
+tr[draggable="true"]:active {
+  cursor: grabbing;
+}
+.dragging-row {
+  opacity: 0.4;
+}
+.dragover-row td {
+  background: rgba(212, 175, 55, 0.08) !important;
+}
+.drag-placeholder td {
+  background: rgba(212, 175, 55, 0.12) !important;
+  border: 2px dashed rgba(212, 175, 55, 0.5) !important;
+  border-radius: 6px;
+  pointer-events: none;
+}
+/* Drag handle hint on first cell */
+tr[draggable="true"] td:first-child::before {
+  content: '⠿';
+  display: inline-block;
+  margin-right: 4px;
+  opacity: 0.3;
+  font-size: 0.85rem;
+  vertical-align: middle;
+}
+tr[draggable="true"]:hover td:first-child::before {
+  opacity: 0.7;
+  color: var(--gold);
+}
+    /* ════════════════════════════════════════════════
+       LOGIN PAGE — Full redesign with logo BG + glass
+    ════════════════════════════════════════════════ */
+
+    /* Animated floating particles */
+    @keyframes floatUp {
+      0%   { transform: translateY(0) rotate(0deg); opacity: 0.6; }
+      100% { transform: translateY(-100vh) rotate(720deg); opacity: 0; }
+    }
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    @keyframes logoGlow {
+      0%, 100% { filter: drop-shadow(0 0 20px rgba(212,175,55,0.4)); }
+      50%       { filter: drop-shadow(0 0 40px rgba(212,175,55,0.8)); }
+    }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(30px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0)    scale(1); }
+    }
+    @keyframes bgPan {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* ── Login overlay — light cream background, logo fills it ── */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      z-index: 1000;
+      overflow: hidden;
+      background: #F3EBDD; /* matches logo's cream backdrop */
+    }
+
+    /* Logo shown at a sensible size on the left side, not stretched/cropped */
+    .login-bg-logo {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding-left: 4vw;
+      pointer-events: none;
+    }
+    .login-bg-logo img {
+      width: min(640px, 55vw);
+      height: auto;
+      object-fit: contain;
+      user-select: none;
+    }
+
+    /* Soft fade only near the card, so the logo on the left stays fully visible */
+    .login-bg-fade {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: linear-gradient(
+        90deg,
+        rgba(243,235,221,0) 0%,
+        rgba(243,235,221,0) 58%,
+        rgba(243,235,221,0.5) 72%,
+        rgba(243,235,221,0.85) 85%,
+        rgba(243,235,221,1) 100%
+      );
+    }
+
+    /* Floating gold orbs */
+    .login-orb {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .login-orb-1 {
+      width: 500px; height: 500px;
+      top: -150px; left: -150px;
+      background: radial-gradient(circle, rgba(212,175,55,0.15) 0%, transparent 70%);
+      animation: floatOrb1 8s ease-in-out infinite alternate;
+    }
+    .login-orb-2 {
+      width: 400px; height: 400px;
+      bottom: -100px; right: -100px;
+      background: radial-gradient(circle, rgba(192,138,10,0.12) 0%, transparent 70%);
+      animation: floatOrb2 10s ease-in-out infinite alternate;
+    }
+    .login-orb-3 {
+      width: 300px; height: 300px;
+      top: 50%; left: 60%;
+      background: radial-gradient(circle, rgba(255,215,100,0.08) 0%, transparent 70%);
+      animation: floatOrb3 7s ease-in-out infinite alternate;
+    }
+    @keyframes floatOrb1 {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(60px, 80px) scale(1.15); }
+    }
+    @keyframes floatOrb2 {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(-50px,-60px) scale(1.1); }
+    }
+    @keyframes floatOrb3 {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(-40px, 50px) scale(0.9); }
+    }
+
+    /* Particle dots */
+    .login-particles {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .particle {
+      position: absolute;
+      bottom: -10px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(212,175,55,0.6);
+      animation: floatUp linear infinite;
+    }
+    .particle:nth-child(1)  { left:5%;  width:4px;  height:4px;  animation-duration:8s;  animation-delay:0s; }
+    .particle:nth-child(2)  { left:12%; width:6px;  height:6px;  animation-duration:10s; animation-delay:2s; }
+    .particle:nth-child(3)  { left:22%; width:3px;  height:3px;  animation-duration:7s;  animation-delay:4s; }
+    .particle:nth-child(4)  { left:35%; width:5px;  height:5px;  animation-duration:9s;  animation-delay:1s; }
+    .particle:nth-child(5)  { left:48%; width:4px;  height:4px;  animation-duration:11s; animation-delay:3s; }
+    .particle:nth-child(6)  { left:60%; width:6px;  height:6px;  animation-duration:8s;  animation-delay:5s; }
+    .particle:nth-child(7)  { left:72%; width:3px;  height:3px;  animation-duration:10s; animation-delay:0.5s; }
+    .particle:nth-child(8)  { left:82%; width:5px;  height:5px;  animation-duration:7s;  animation-delay:2.5s; }
+    .particle:nth-child(9)  { left:90%; width:4px;  height:4px;  animation-duration:9s;  animation-delay:4.5s; }
+    .particle:nth-child(10) { left:95%; width:3px;  height:3px;  animation-duration:12s; animation-delay:1.5s; }
+
+    /* ── Glassmorphism login card (light theme) ── */
+    .login-card {
+      position: relative;
+      z-index: 10;
+      width: 420px;
+      max-width: 92vw;
+      padding: 48px 42px 40px;
+      border-radius: 24px;
+      margin-right: 7vw;
+      animation: cardIn 0.6s 0.2s cubic-bezier(0.34,1.56,0.64,1) both;
+
+      /* Light glass effect */
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(20px) saturate(160%);
+      -webkit-backdrop-filter: blur(20px) saturate(160%);
+      border: 1px solid rgba(192, 138, 10, 0.25);
+      box-shadow:
+        0 8px 32px rgba(61, 45, 10, 0.18),
+        0 0 0 1px rgba(255,255,255,0.4) inset,
+        0 1px 0 rgba(255,255,255,0.6) inset;
+    }
+
+    /* Gold shimmer top border */
+    .login-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 20px; right: 20px;
+      height: 2px;
+      border-radius: 0 0 2px 2px;
+      background: linear-gradient(90deg, transparent, #D4AF37, #F5D060, #D4AF37, transparent);
+      background-size: 200% auto;
+      animation: shimmer 3s linear infinite;
+    }
+
+    /* Small logo inside card */
+    .login-card-logo {
+      display: block;
+      width: 180px;
+      margin: 0 auto 20px;
+      border-radius: 10px;
+      filter: drop-shadow(0 2px 10px rgba(61,45,10,0.15));
+    }
+
+    .login-title {
+      font-family: 'Sora', sans-serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      text-align: center;
+      color: #2A2118;
+      margin: 0 0 4px;
+      letter-spacing: -0.3px;
+    }
+    .login-sub {
+      text-align: center;
+      color: #6B5D48;
+      font-size: 0.82rem;
+      margin: 0 0 28px;
+      letter-spacing: 0.5px;
+    }
+
+    /* Gold divider */
+    .login-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .login-divider span {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(212,175,55,0.4), transparent);
+    }
+    .login-divider em {
+      font-style: normal;
+      font-size: 0.7rem;
+      color: #A87C1A;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    /* Glass input (light theme) */
+    .login-card .input-dark {
+      width: 100%;
+      box-sizing: border-box;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(192,138,10,0.3);
+      border-radius: 12px;
+      padding: 13px 16px;
+      color: #2A2118;
+      font-size: 0.95rem;
+      font-family: 'DM Sans', sans-serif;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+      margin-bottom: 4px;
+    }
+    .login-card .input-dark::placeholder { color: #9C8C70; }
+    .login-card .input-dark:focus {
+      border-color: rgba(192,138,10,0.7);
+      background: rgba(255,255,255,0.85);
+      box-shadow: 0 0 0 3px rgba(192,138,10,0.12);
+    }
+
+    /* Gold unlock button */
+    .login-card .btn-gold {
+      width: 100%;
+      margin-top: 16px;
+      padding: 13px;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #C8960C, #D4AF37, #F5D060, #D4AF37);
+      background-size: 200% auto;
+      color: #1a1200;
+      border: none;
+      cursor: pointer;
+      transition: background-position 0.4s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(212,175,55,0.35);
+    }
+    .login-card .btn-gold:hover {
+      background-position: right center;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 28px rgba(212,175,55,0.5);
+    }
+    .login-card .btn-gold:active { transform: translateY(0); }
+
+    .login-error {
+      color: #f87171;
+      font-size: 0.8rem;
+      text-align: center;
+      margin-top: 10px;
+      background: rgba(248,113,113,0.1);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+
+    /* Tagline at bottom of card */
+    .login-tagline {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 0.7rem;
+      color: #A87C1A;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* ── App header logo ── */
+    .header-logo {
+      height: 36px;
+      width: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 1px 4px rgba(212,175,55,0.3));
+    }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    /* On narrow screens, center the card and shrink/center the logo */
+    @media (max-width: 760px) {
+      .login-overlay { justify-content: center; }
+      .login-card { margin-right: 0; }
+      .login-bg-logo {
+        justify-content: center;
+        padding-left: 0;
+        opacity: 0.5;
+      }
+      .login-bg-logo img { width: min(360px, 70vw); }
+      .login-bg-fade {
+        background: linear-gradient(
+          180deg,
+          rgba(243,235,221,0.2) 0%,
+          rgba(243,235,221,0.85) 55%,
+          rgba(243,235,221,0.97) 100%
+        );
+      }
+    }
+
   </style>
 </head>
 <body>
 
 <!-- ═══════════════════════════════════════════════
-     HEADER
+     LOGIN OVERLAY
 ═══════════════════════════════════════════════ -->
+<div class="login-overlay" id="loginOverlay">
+
+  <!-- Big watermark logo in background -->
+  <div class="login-bg-logo">
+    <img src="/static/images/logo.png" alt="Loan Express" />
+  </div>
+
+  <!-- Soft fade so the card area stays readable -->
+  <div class="login-bg-fade"></div>
+
+  <!-- Glowing orbs -->
+  <div class="login-orb login-orb-1"></div>
+  <div class="login-orb login-orb-2"></div>
+  <div class="login-orb login-orb-3"></div>
+
+  <!-- Floating particles -->
+  <div class="login-particles">
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+  </div>
+
+  <!-- Glassmorphism card -->
+  <div class="login-card">
+
+    <!-- Logo inside card -->
+    <img src="/static/images/logo.png" alt="Loan Express" class="login-card-logo" />
+
+    <h2 class="login-title">Welcome Back</h2>
+    <p class="login-sub">Sign in to the Website</p>
+
+    <div class="login-divider">
+      <span></span><em>Secure Access</em><span></span>
+    </div>
+
+    <input
+      type="password"
+      class="input-dark"
+      id="loginPassword"
+      placeholder="Enter your password"
+      onkeydown="if(event.key==='Enter') submitLogin()"
+    />
+
+    <button class="btn-gold" onclick="submitLogin()">
+      🔐 Unlock 
+    </button>
+
+    <p class="login-error" id="loginError" style="display:none"></p>
+
+    <p class="login-tagline">Developed by @Singh</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MAIN APP
+═══════════════════════════════════════════════ -->
+<div id="mainApp" style="display:none">
+
+<!-- HEADER -->
 <header class="header">
-  <div class="header-brand">
-    <div class="header-icon">₹</div>
+  <div class="header-brand" id="homeBtn">
+    <!-- Logo in header -->
+    <img src="/static/images/logo.png" alt="Loan Express" class="header-logo" />
     <div>
-      <h1 class="header-title">Lending Manager</h1>
-      <p class="header-sub">Personal Finance Ledger</p>
+      <h1 class="header-title">Loan Express</h1>
+      <p class="header-sub" id="headerSub">Lending Manager</p>
     </div>
   </div>
 
@@ -120,21 +547,33 @@
       <span style="font-size:1rem">📦</span>
       End of Month
     </button>
+    <button class="btn-carry" onclick="exportToExcel()" title="Download this month's data as Excel">
+  <span style="font-size:1rem">📥</span>
+  Export Excel
+</button>
 
     <button class="btn-gold" onclick="openAddModal()">
       + Add Entry
     </button>
+
+    <button class="btn-ghost" onclick="doLogout()" title="Log out">
+      Logout
+    </button>
   </div>
 </header>
 
-<!-- ═══════════════════════════════════════════════
-     SLOT TABS
-═══════════════════════════════════════════════ -->
-<div class="slot-tabs" id="slotTabs"></div>
+<!-- WELCOME / SLOT SELECTION -->
+<div class="welcome-view" id="welcomeView">
+  <div class="welcome-intro">
+    <h2 class="welcome-title">Select a Slot</h2>
+    <p class="welcome-subtitle">Choose a funding slot to view its ledger and collections</p>
+  </div>
+  <div class="slot-card-grid" id="slotCardGrid"></div>
+</div>
 
-<!-- ═══════════════════════════════════════════════
-     MAIN LAYOUT
-═══════════════════════════════════════════════ -->
+<!-- APP VIEW -->
+<div class="app-view" id="appView" style="display:none">
+
 <div class="main-layout">
 
   <!-- TABLE SECTION -->
@@ -152,12 +591,12 @@
             <th class="text-left">Opening Date</th>
             <th class="text-left">Customer Name</th>
             <th class="text-right">Funding</th>
-            <th class="text-right">Profit 28%</th>
+            <th class="text-right" id="th_profit">Profit 28%</th>
             <th class="text-right">Staff Comm 8%</th>
             <th class="text-right">Total Due</th>
             <th class="text-right">Payment Done</th>
             <th class="text-right">Balance</th>
-            <th class="text-right">Net Income</th>
+            <th class="text-right" id="th_net_income">Net Income</th>
             <th class="text-center">Status</th>
             <th style="width:30px"></th>
           </tr>
@@ -172,27 +611,25 @@
   <!-- SUMMARY SIDEBAR -->
   <div class="sidebar">
     <div class="summary-panel" id="summaryPanel" style="display:none">
-
       <div class="summary-header">
-  <h3 class="summary-title">Monthly Summary</h3>
-  <span class="customer-badge" id="customerBadge">0 customers</span>
-</div>
+        <h3 class="summary-title">Monthly Summary</h3>
+        <span class="customer-badge" id="customerBadge">0 customers</span>
+      </div>
 
-<!-- Closed accounts counter -->
-<div style="display:flex; gap:10px; margin-bottom:16px;">
-  <div class="mini-stat-card active-card">
-    <span class="mini-stat-num" id="activeCount">0</span>
-    <span class="mini-stat-label">Active</span>
-  </div>
-  <div class="mini-stat-card closed-card">
-    <span class="mini-stat-num" id="closedCount">0</span>
-    <span class="mini-stat-label">Closed</span>
-  </div>
-  <div class="mini-stat-card total-card">
-    <span class="mini-stat-num" id="totalCount">0</span>
-    <span class="mini-stat-label">Total</span>
-  </div>
-</div>
+      <div style="display:flex; gap:10px; margin-bottom:16px;">
+        <div class="mini-stat-card active-card">
+          <span class="mini-stat-num" id="activeCount">0</span>
+          <span class="mini-stat-label">Active</span>
+        </div>
+        <div class="mini-stat-card closed-card">
+          <span class="mini-stat-num" id="closedCount">0</span>
+          <span class="mini-stat-label">Closed</span>
+        </div>
+        <div class="mini-stat-card total-card">
+          <span class="mini-stat-num" id="totalCount">0</span>
+          <span class="mini-stat-label">Total</span>
+        </div>
+      </div>
 
       <div class="recovery-bar-wrap">
         <div class="recovery-bar-labels">
@@ -210,34 +647,54 @@
         <span class="kothi-label">🏦 Kothi Capital</span>
         <span class="kothi-value mono" id="kothiValue">₹0</span>
       </div>
-
     </div>
   </div>
 
 </div>
 
-<!-- ═══════════════════════════════════════════════
-     DAILY COLLECTIONS
-═══════════════════════════════════════════════ -->
+<!-- DAILY LEDGER -->
 <div class="daily-section" id="dailySection">
   <div class="daily-header">
     <div class="daily-header-left">
-      <h2 class="daily-title">📅 Daily Collections</h2>
-      <span class="daily-subtitle" id="dailySubtitle">—</span>
+      <h2 class="daily-title">📅 Daily Ledger — Devanam/Pawana</h2>
     </div>
     <div class="daily-stats" id="dailyStats"></div>
   </div>
 
+  <div class="opening-pawana-box" id="openingPawanaBox">
+    <label class="opening-pawana-label" for="openingPawanaInput">Previous Month Closing Amount</label>
+    <input
+      type="number"
+      class="opening-pawana-input"
+      id="openingPawanaInput"
+      placeholder="e.g. 24000"
+      oninput="handleOpeningPawanaInput()"
+    />
+    <span class="opening-pawana-hint">Seeds Devanam/Pawana for the 1st of this month. Enter manually each new month.</span>
+  </div>
+
   <div class="daily-grid-wrap">
     <table class="daily-table">
+      <colgroup>
+        <col style="width:56px">
+        <col style="width:120px">
+        <col style="width:130px">
+        <col style="width:130px">
+        <col style="width:130px">
+        <col style="width:130px">
+        <col style="width:130px">
+        <col style="width:110px">
+      </colgroup>
       <thead>
         <tr>
-          <th class="text-center">Day</th>
+          <th class="text-center">S.No</th>
           <th class="text-left">Date</th>
-          <th class="text-right">Target / Day</th>
-          <th class="text-right">Collected</th>
-          <th class="text-right">Difference</th>
-          <th class="text-right">Cumulative</th>
+          <th class="text-right">Devanam/Pawana</th>
+          <th class="text-right">Income</th>
+          <th class="text-right">Khata</th>
+          <th class="text-right">Dewanam/Pawana</th>
+          <th class="text-right">Target/Day</th>
+          <th class="text-center">% Achieved</th>
         </tr>
       </thead>
       <tbody id="dailyBody"></tbody>
@@ -246,10 +703,11 @@
   </div>
 </div>
 
+</div> <!-- #appView -->
+</div> <!-- #mainApp -->
 
-<!-- ═══════════════════════════════════════════════
-     ADD CUSTOMER MODAL
-═══════════════════════════════════════════════ -->
+
+<!-- ADD CUSTOMER MODAL -->
 <div class="modal-overlay" id="addModal" style="display:none" onclick="handleOverlayClick(event)">
   <div class="modal-box">
     <h2 class="modal-title">✨ Add New Customer</h2>
@@ -275,10 +733,14 @@
     <div class="calc-preview" id="calcPreview" style="display:none">
       <p class="calc-label">⚡ Auto-calculated preview</p>
       <div class="calc-grid">
-        <span class="text-muted">28% Profit:</span>   <span class="text-green mono" id="c_profit">₹0</span>
-        <span class="text-muted">8% Commission:</span> <span class="text-yellow mono" id="c_comm">₹0</span>
-        <span class="text-muted">Total Due:</span>     <span class="text-rupee mono" id="c_due">₹0</span>
-        <span class="text-muted">Balance Left:</span>  <span class="text-red mono" id="c_bal">₹0</span>
+        <span class="text-muted" id="modal_profit_label">Profit:</span>
+        <span class="text-green mono" id="c_profit">₹0</span>
+        <span class="text-muted">8% Commission:</span>
+        <span class="text-yellow mono" id="c_comm">₹0</span>
+        <span class="text-muted">Total Due:</span>
+        <span class="text-rupee mono" id="c_due">₹0</span>
+        <span class="text-muted">Balance Left:</span>
+        <span class="text-red mono" id="c_bal">₹0</span>
       </div>
     </div>
 
@@ -289,18 +751,13 @@
   </div>
 </div>
 
-
-<!-- ═══════════════════════════════════════════════
-     CARRY FORWARD MODAL
-═══════════════════════════════════════════════ -->
+<!-- CARRY FORWARD MODAL -->
 <div class="modal-overlay" id="carryModal" style="display:none" onclick="handleCarryOverlayClick(event)">
   <div class="modal-box" style="max-width:490px">
     <h2 class="modal-title">📦 End of Month — Carry Forward</h2>
 
     <div class="carry-warning">
       ⚠️ <strong>Perform this only at the end of the month.</strong>
-      Active customers will be copied to the next month with payment reset to ₹0.
-      Closed customers will <em>NOT</em> be transferred.
     </div>
 
     <div class="carry-info" id="carryInfo"></div>
@@ -325,14 +782,11 @@
   </div>
 </div>
 
-
-<!-- ═══ TOAST ═══════════════════════════════════ -->
+<!-- TOAST -->
 <div id="toast" class="toast" style="display:none"></div>
 
-
-<!-- ═══ RIPPLE SCRIPT ════════════════════════════ -->
+<!-- RIPPLE -->
 <script>
-  /* Ripple effect on all buttons */
   document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-gold, .btn-carry-confirm, .btn-ghost');
     if (!btn) return;
