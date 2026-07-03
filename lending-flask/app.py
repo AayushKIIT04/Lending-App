@@ -172,7 +172,7 @@ def get_summary(slot_id, month_year):
             SUM(c.funding * {net_rate}) AS total_net_income,
             SUM(CASE WHEN DATE_FORMAT(c.opening_date, '%Y-%m') = %s AND fs.charges_commission = 1 THEN c.funding * {staff_rate} ELSE 0 END) AS total_staff_commission,
             SUM(c.funding) AS running_funding,
-            SUM(CASE WHEN c.is_closed = 0 THEN (c.funding * {total_rate} - c.payment_has_been_done) ELSE 0 END) AS total_balance_recovery,
+           SUM(c.funding * {total_rate} - c.payment_has_been_done) AS total_balance_recovery,
             SUM(CASE WHEN c.is_closed = 1 THEN c.funding ELSE 0 END) AS closed_funding_total
            FROM customers c
            JOIN funding_slots fs ON c.slot_id = fs.id
@@ -240,7 +240,7 @@ def export_excel(slot_id, month_year):
             SUM(c.funding * {net_rate}) AS total_net_income,
             SUM(CASE WHEN DATE_FORMAT(c.opening_date, '%Y-%m') = %s AND fs.charges_commission = 1 THEN c.funding * {staff_rate} ELSE 0 END) AS total_staff_commission,
             SUM(c.funding) AS running_funding,
-            SUM(CASE WHEN c.is_closed = 0 THEN (c.funding * {total_rate} - c.payment_has_been_done) ELSE 0 END) AS total_balance_recovery,
+            SUM(c.funding * {total_rate} - c.payment_has_been_done) AS total_balance_recovery,
             SUM(CASE WHEN c.is_closed = 1 THEN c.funding ELSE 0 END) AS closed_funding_total
            FROM customers c
            JOIN funding_slots fs ON c.slot_id = fs.id
@@ -820,9 +820,12 @@ def carry_forward():
     copied  = 0
     skipped = 0
     for c in active:
+        # Only skip if THIS EXACT source row was already carried to to_month before.
+        # We deliberately do NOT match by customer_name — duplicate names are
+        # allowed and must always be copied, never skipped.
         exists = query(
-            "SELECT id FROM customers WHERE slot_id=%s AND month_year=%s AND customer_name=%s",
-            (slot_id, to_month, c["customer_name"]),
+            "SELECT id FROM customers WHERE slot_id=%s AND month_year=%s AND carried_from_id=%s",
+            (slot_id, to_month, c["id"]),
             fetchone=True,
         )
         if exists:
@@ -839,10 +842,10 @@ def carry_forward():
         query(
             """INSERT INTO customers
                (slot_id, sl_no, opening_date, customer_name, funding,
-                payment_has_been_done, month_year, daily_recovery, is_closed)
-               VALUES (%s, %s, %s, %s, %s, 0, %s, %s, 0)""",
+                payment_has_been_done, month_year, daily_recovery, is_closed, carried_from_id)
+               VALUES (%s, %s, %s, %s, %s, 0, %s, %s, 0, %s)""",
             (slot_id, next_sl, c["opening_date"], c["customer_name"],
-             c["funding"], to_month, c["daily_recovery"]),
+             c["funding"], to_month, c["daily_recovery"], c["id"]),
             commit=True,
         )
         copied += 1
@@ -850,7 +853,7 @@ def carry_forward():
     return jsonify({
         "copied":  copied,
         "skipped": skipped,
-        "message": f"{copied} customer(s) carried to {to_month}. {skipped} already existed and were skipped."
+        "message": f"{copied} customer(s) carried to {to_month}. {skipped} were already carried forward previously and were skipped."
     })
 
 

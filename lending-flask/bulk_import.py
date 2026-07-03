@@ -7,7 +7,7 @@ load_dotenv()
 
 # ─── CONFIG: change these for each import ──────────────────────
 EXCEL_FILE = "customers.xlsx"   # your excel file name (must be in same folder)
-SLOT_ID    = 8                  # which slot to add these into (check /api/slots for IDs)
+SLOT_ID    = 5                 # which slot to add these into (check /api/slots for IDs)
 MONTH_YEAR = "2026-06"          # which month's LEDGER this batch goes under (e.g. June)
 # Note: opening_date stays as the real historical date from the sheet (e.g. 12.9.25 -> 2025-09-12)
 # month_year above is just which ledger page it appears under, NOT derived from opening_date.

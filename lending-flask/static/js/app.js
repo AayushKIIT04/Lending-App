@@ -180,9 +180,11 @@ function setSlotActionsVisible(visible) {
   const carryBtn    = document.querySelector('.header-controls .btn-carry');
   const addBtn      = document.querySelector('.header-controls .btn-gold');
   const monthSelect = document.getElementById('monthSelect');
+  const searchWrap  = document.getElementById('headerSearchWrap');
   if (carryBtn)    carryBtn.style.display    = display;
   if (addBtn)      addBtn.style.display      = display;
   if (monthSelect) monthSelect.style.display = display;
+  if (searchWrap)  searchWrap.style.display  = visible ? 'flex' : 'none';
 }
 
 async function openSlot(id) {
@@ -380,10 +382,7 @@ function renderTable() {
   if (isAdmin) enableRowDragging();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// DRAG-AND-DROP ROW REORDERING
-// ═══════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════
+
 // ═══════════════════════════════════════════════════════════════════
 // DRAG-AND-DROP ROW REORDERING — scrolls .table-wrapper, not window
 // ═══════════════════════════════════════════════════════════════════
@@ -769,6 +768,90 @@ let openingAmount   = 0;
 let saveTimers      = {};
 let openingSaveTimer = null;
 
+// ─── Khata day notes (client-side only, NEVER sent to the server /
+//     stored in the database — persisted in this browser's localStorage) ──
+let dayNotes = {};
+let activeNotePopover = null;
+
+function notesKey() {
+  return `khata_notes_${activeSlotId}_${monthYear}`;
+}
+function loadDayNotes() {
+  try { dayNotes = JSON.parse(localStorage.getItem(notesKey())) || {}; }
+  catch { dayNotes = {}; }
+}
+function saveDayNotes() {
+  try { localStorage.setItem(notesKey(), JSON.stringify(dayNotes)); } catch {}
+}
+
+function closeNotePopover() {
+  if (activeNotePopover) {
+    activeNotePopover.remove();
+    activeNotePopover = null;
+    document.removeEventListener('mousedown', handleNotePopoverOutsideClick);
+  }
+}
+function handleNotePopoverOutsideClick(e) {
+  if (activeNotePopover && !activeNotePopover.contains(e.target) && !e.target.classList.contains('note-btn')) {
+    closeNotePopover();
+  }
+}
+
+function openNotePopover(day, btn) {
+  closeNotePopover();
+  const existing = dayNotes[day] || '';
+  const isAdmin  = currentRole === 'admin';
+
+  const pop = document.createElement('div');
+  pop.className = 'note-popover';
+  pop.innerHTML = `
+    <textarea class="note-textarea" placeholder="Add a note for day ${day}…" ${isAdmin ? '' : 'readonly'}>${escHtml(existing)}</textarea>
+    <div class="note-popover-actions">
+      ${isAdmin ? `
+        <button type="button" class="note-btn-delete">Delete</button>
+        <button type="button" class="note-btn-save">Save</button>
+      ` : `<button type="button" class="note-btn-save">Close</button>`}
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  const rect = btn.getBoundingClientRect();
+  const top  = window.scrollY + rect.bottom + 6;
+  let left   = window.scrollX + rect.left - 190;
+  if (left < 8) left = 8;
+  pop.style.position = 'absolute';
+  pop.style.top  = `${top}px`;
+  pop.style.left = `${left}px`;
+
+  activeNotePopover = pop;
+  const textarea = pop.querySelector('.note-textarea');
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+  pop.querySelector('.note-btn-save').addEventListener('click', () => {
+    if (isAdmin) {
+      const val = textarea.value.trim();
+      if (val) dayNotes[day] = val; else delete dayNotes[day];
+      saveDayNotes();
+    }
+    closeNotePopover();
+    renderDailyCollections();
+  });
+
+  const delBtn = pop.querySelector('.note-btn-delete');
+  if (delBtn) {
+    delBtn.addEventListener('click', () => {
+      delete dayNotes[day];
+      saveDayNotes();
+      closeNotePopover();
+      renderDailyCollections();
+    });
+  }
+
+  textarea.addEventListener('keydown', e => { if (e.key === 'Escape') closeNotePopover(); });
+  setTimeout(() => document.addEventListener('mousedown', handleNotePopoverOutsideClick), 0);
+}
+
 function getDaysInMonth(my) {
   const [y, m] = my.split('-').map(Number);
   return new Date(y, m, 0).getDate();
@@ -797,6 +880,7 @@ async function loadDailyCollections() {
     openingAmount = 0;
     dailyData     = [];
   }
+  loadDayNotes();
   renderDailyCollections();
 }
 
@@ -837,6 +921,8 @@ function renderDailyCollections() {
     let pctAchieved  = dailyTarget > 0 ? (income / dailyTarget) * 100 : 0;
     let achievedClass = pctAchieved >= 100 ? 'achieved-good' : pctAchieved >= 50 ? 'achieved-mid' : 'achieved-low';
 
+    const hasNote = !!dayNotes[day];
+
     const tr = document.createElement('tr');
     if (future) tr.classList.add('future-row');
     tr.innerHTML = `
@@ -848,8 +934,12 @@ function renderDailyCollections() {
           data-day="${day}" ${future ? 'disabled' : ''} />
       </td>
       <td class="text-right" style="padding:4px 12px">
-        <input class="collect-input khata-input" type="number" value="${khata || ''}" placeholder="0"
-          data-day="${day}" ${future ? 'disabled' : ''} />
+        <div class="khata-cell">
+          <input class="collect-input khata-input" type="number" value="${khata || ''}" placeholder="0"
+            data-day="${day}" ${future ? 'disabled' : ''} />
+          <button type="button" class="note-btn ${hasNote ? 'has-note' : ''}" data-day="${day}"
+            title="${hasNote ? escHtml(dayNotes[day]) : 'Add note'}">📝</button>
+        </div>
       </td>
       <td class="text-right ${pawanaClass}" style="font-weight:700">₹${fmt(closingPawana)}</td>
       <td class="text-right target-val">₹${fmt(dailyTarget)}</td>
@@ -881,6 +971,14 @@ function renderDailyCollections() {
       const day = parseInt(input.dataset.day);
       clearTimeout(saveTimers['khata_' + day]);
       saveKhata(day, input.value);
+    });
+  });
+
+  // ── Khata note button ──
+  tbody.querySelectorAll('.note-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openNotePopover(parseInt(btn.dataset.day), btn);
     });
   });
 
@@ -1050,5 +1148,111 @@ async function submitCarryForward() {
     btn.disabled    = false;
     btn.textContent = '✅ Carry Forward Active Customers';
   }
+}
+// ═══════════════════════════════════════════════════════════════════
+// LEDGER SEARCH (customer name) — highlight + jump to matching rows
+// ═══════════════════════════════════════════════════════════════════
+let searchMatches = [];
+let searchActiveIndex = -1;
+
+function onLedgerSearchInput() {
+  const input = document.getElementById('ledgerSearchInput');
+  const query = input.value.trim().toLowerCase();
+
+  clearSearchHighlights();
+
+  const countEl = document.getElementById('searchResultCount');
+  const prevBtn = document.getElementById('searchPrevBtn');
+  const nextBtn = document.getElementById('searchNextBtn');
+  const clearBtn = document.getElementById('searchClearBtn');
+
+  if (!query) {
+    searchMatches = [];
+    searchActiveIndex = -1;
+    countEl.style.display = 'none';
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+    clearBtn.style.display = 'none';
+    return;
+  }
+
+  clearBtn.style.display = 'inline-flex';
+
+  const rows = Array.from(document.querySelectorAll('#ledgerBody tr[data-id]'));
+  searchMatches = rows.filter(tr => {
+    const nameCell = tr.querySelector('[data-field="customer_name"]');
+    const name = nameCell ? nameCell.textContent.trim().toLowerCase() : '';
+    return name.includes(query);
+  });
+
+  searchMatches.forEach(tr => tr.classList.add('search-match-row'));
+
+  if (searchMatches.length === 0) {
+    countEl.textContent = 'No matches';
+    countEl.style.display = 'inline';
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+    searchActiveIndex = -1;
+    return;
+  }
+
+  prevBtn.style.display = 'inline-flex';
+  nextBtn.style.display = 'inline-flex';
+  searchActiveIndex = 0;
+  updateSearchActiveRow();
+}
+
+function updateSearchActiveRow() {
+  searchMatches.forEach(tr => tr.classList.remove('search-active-row'));
+  const countEl = document.getElementById('searchResultCount');
+
+  if (searchMatches.length === 0 || searchActiveIndex < 0) return;
+
+  const activeRow = searchMatches[searchActiveIndex];
+  activeRow.classList.add('search-active-row');
+  activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  countEl.textContent = `${searchActiveIndex + 1} / ${searchMatches.length}`;
+  countEl.style.display = 'inline';
+}
+
+function gotoNextMatch() {
+  if (searchMatches.length === 0) return;
+  searchActiveIndex = (searchActiveIndex + 1) % searchMatches.length;
+  updateSearchActiveRow();
+}
+
+function gotoPrevMatch() {
+  if (searchMatches.length === 0) return;
+  searchActiveIndex = (searchActiveIndex - 1 + searchMatches.length) % searchMatches.length;
+  updateSearchActiveRow();
+}
+
+function handleLedgerSearchKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (e.shiftKey) gotoPrevMatch(); else gotoNextMatch();
+  } else if (e.key === 'Escape') {
+    clearLedgerSearch();
+  }
+}
+
+function clearLedgerSearch() {
+  const input = document.getElementById('ledgerSearchInput');
+  input.value = '';
+  clearSearchHighlights();
+  searchMatches = [];
+  searchActiveIndex = -1;
+  document.getElementById('searchResultCount').style.display = 'none';
+  document.getElementById('searchPrevBtn').style.display = 'none';
+  document.getElementById('searchNextBtn').style.display = 'none';
+  document.getElementById('searchClearBtn').style.display = 'none';
+  input.focus();
+}
+
+function clearSearchHighlights() {
+  document.querySelectorAll('#ledgerBody tr').forEach(tr => {
+    tr.classList.remove('search-match-row', 'search-active-row');
+  });
 }
 window.exportToExcel = exportToExcel;

@@ -541,6 +541,22 @@ tr[draggable="true"]:hover td:first-child::before {
   </div>
 
   <div class="header-controls">
+    <div class="ledger-search-wrap" id="headerSearchWrap" style="display:none">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        id="ledgerSearchInput"
+        class="ledger-search-input"
+        placeholder="Search customer name…"
+        oninput="onLedgerSearchInput()"
+        onkeydown="handleLedgerSearchKeydown(event)"
+      />
+      <span class="search-result-count" id="searchResultCount" style="display:none"></span>
+      <button class="search-nav-btn" id="searchPrevBtn" onclick="gotoPrevMatch()" style="display:none" title="Previous match (Shift+Enter)">▲</button>
+      <button class="search-nav-btn" id="searchNextBtn" onclick="gotoNextMatch()" style="display:none" title="Next match (Enter)">▼</button>
+      <button class="search-clear-btn" id="searchClearBtn" onclick="clearLedgerSearch()" style="display:none" title="Clear (Esc)">✕</button>
+    </div>
+
     <select id="monthSelect" class="input-dark"></select>
 
     <button class="btn-carry" onclick="openCarryModal()" title="End of month carry forward">
@@ -548,9 +564,9 @@ tr[draggable="true"]:hover td:first-child::before {
       End of Month
     </button>
     <button class="btn-carry" onclick="exportToExcel()" title="Download this month's data as Excel">
-  <span style="font-size:1rem">📥</span>
-  Export Excel
-</button>
+      <span style="font-size:1rem">📥</span>
+      Export Excel
+    </button>
 
     <button class="btn-gold" onclick="openAddModal()">
       + Add Entry
@@ -584,27 +600,27 @@ tr[draggable="true"]:hover td:first-child::before {
     </div>
 
     <div class="table-wrapper">
-      <table class="ledger-table" id="ledgerTable">
-        <thead>
-          <tr>
-            <th class="text-center" style="width:40px">Sl#</th>
-            <th class="text-left">Opening Date</th>
-            <th class="text-left">Customer Name</th>
-            <th class="text-right">Funding</th>
-            <th class="text-right" id="th_profit">Profit 28%</th>
-            <th class="text-right">Staff Comm 8%</th>
-            <th class="text-right">Total Due</th>
-            <th class="text-right">Payment Done</th>
-            <th class="text-right">Balance</th>
-            <th class="text-right" id="th_net_income">Net Income</th>
-            <th class="text-center">Status</th>
-            <th style="width:30px"></th>
-          </tr>
-        </thead>
-        <tbody id="ledgerBody"></tbody>
-        <tfoot id="ledgerFoot"></tfoot>
-      </table>
-    </div>
+  <table class="ledger-table" id="ledgerTable">
+    <thead>
+      <tr>
+        <th class="text-center">S.No</th>
+        <th class="text-left">Opening Date</th>
+        <th class="text-left">Customer Name</th>
+        <th class="text-right">Funding</th>
+        <th class="text-right" id="th_profit">Profit</th>
+        <th class="text-right">Staff Comm (8%)</th>
+        <th class="text-right">Total Due</th>
+        <th class="text-right">Payment Done</th>
+        <th class="text-right">Balance</th>
+        <th class="text-right" id="th_net_income">Net Income</th>
+        <th class="text-center">Status</th>
+        <th class="text-center"></th>
+      </tr>
+    </thead>
+    <tbody id="ledgerBody"></tbody>
+    <tfoot id="ledgerFoot"></tfoot>
+  </table>
+</div>
     <p class="tip-text">✏️ Double-click any cell to edit inline</p>
   </div>
 
