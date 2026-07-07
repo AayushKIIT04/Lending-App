@@ -6,7 +6,7 @@
   <title>Loan Express — Lending Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css" />
+<link rel="stylesheet" href="/static/css/style.css?v=2" />
 
   <style>
     /* ── Page-load animation ───────────────────────── */
@@ -84,25 +84,95 @@
       color: transparent !important;
     }
 
-    /* ── Target / % Achieved column ────────────────── */
-    .target-val { color: var(--ink-mid); font-weight: 600; }
-    .achieved-badge {
-      display: inline-block;
-      padding: 2px 9px;
-      border-radius: 20px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .achieved-good { background: var(--emerald-bg); color: var(--emerald); border: 1px solid var(--emerald-bd); }
-    .achieved-mid  { background: var(--gold-bg);    color: var(--gold);    border: 1px solid var(--gold-border); }
-    .achieved-low  { background: var(--ruby-bg);    color: var(--ruby);    border: 1px solid var(--ruby-bd); }
+    /* ── Target / % Achieved column already styled in style.css ── */
 /* ── Closed funding summary row ── */
 .summary-row-closed {
   background: rgba(100, 116, 139, 0.07);
   border-left: 3px solid #64748b;
   border-radius: 6px;
   padding-left: 10px !important;
+}
+/* ── Highlighted green summary row (e.g. This Month Funding) ── */
+.summary-row-highlight-green {
+  background: rgba(16, 185, 129, 0.08);
+  border-left: 3px solid #10b981;
+  border-radius: 6px;
+  padding-left: 10px !important;
+}
+/* ── Highlighted blue summary row (Total Funding, Total Funding + Profit,
+     Previous Month Recovery, Balance) ── */
+.summary-row-highlight-blue {
+  background: rgba(26, 85, 163, 0.08);
+  border-left: 3px solid #1A55A3;
+  border-radius: 6px;
+  padding-left: 10px !important;
+}
+.text-sapphire {
+  color: #1A55A3;
+}
+
+/* ── Live Balance Recovery — bold glossy highlighted card ── */
+.summary-row-live-balance {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1A55A3 0%, #2E6FCB 45%, #4A8DE8 75%, #1A55A3 100%);
+  box-shadow:
+    0 4px 16px rgba(26, 85, 163, 0.45),
+    0 1px 0 rgba(255,255,255,0.25) inset,
+    0 -2px 6px rgba(0,0,0,0.15) inset;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.summary-row-live-balance:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(26, 85, 163, 0.55),
+    0 1px 0 rgba(255,255,255,0.3) inset,
+    0 -2px 6px rgba(0,0,0,0.15) inset;
+}
+/* glossy shine sweep across the top */
+.summary-row-live-balance::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.05) 100%);
+  border-radius: 14px 14px 50% 50% / 14px 14px 100% 100%;
+  pointer-events: none;
+}
+/* subtle animated glow ring */
+.summary-row-live-balance::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  pointer-events: none;
+}
+.summary-row-label-live {
+  position: relative;
+  z-index: 1;
+  font-family: 'Sora', sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: #FFFFFF;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.summary-row-val-live {
+  position: relative;
+  z-index: 1;
+  font-weight: 900;
+  font-size: 1.05rem;
+  color: #FFFFFF;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  letter-spacing: -0.01em;
 }
 /* ── Drag-and-drop row reordering ── */
 tr[draggable="true"] {
@@ -557,7 +627,10 @@ tr[draggable="true"]:hover td:first-child::before {
       <button class="search-clear-btn" id="searchClearBtn" onclick="clearLedgerSearch()" style="display:none" title="Clear (Esc)">✕</button>
     </div>
 
+    <span class="header-slot-title" id="headerSlotTitle" style="display:none"></span>
+
     <select id="monthSelect" class="input-dark"></select>
+
 
     <button class="btn-carry" onclick="openCarryModal()" title="End of month carry forward">
       <span style="font-size:1rem">📦</span>
@@ -569,7 +642,7 @@ tr[draggable="true"]:hover td:first-child::before {
     </button>
 
     <button class="btn-gold" onclick="openAddModal()">
-      + Add Entry
+      + Funding Entry
     </button>
 
     <button class="btn-ghost" onclick="doLogout()" title="Log out">
@@ -585,6 +658,13 @@ tr[draggable="true"]:hover td:first-child::before {
     <p class="welcome-subtitle">Choose a funding slot to view its ledger and collections</p>
   </div>
   <div class="slot-card-grid" id="slotCardGrid"></div>
+
+<div class="recovery-chart-card">
+  <h3 class="recovery-chart-title">📊 Recovery Progress by Slot</h3>
+  <div class="recovery-chart-wrap">
+    <canvas id="recoveryChart"></canvas>
+  </div>
+</div>
 </div>
 
 <!-- APP VIEW -->
@@ -608,7 +688,7 @@ tr[draggable="true"]:hover td:first-child::before {
         <th class="text-left">Customer Name</th>
         <th class="text-right">Funding</th>
         <th class="text-right" id="th_profit">Profit</th>
-        <th class="text-right">Staff Comm (8%)</th>
+        <th class="text-right" id="th_staff_comm">Staff Comm (6%)</th>
         <th class="text-right">Total Due</th>
         <th class="text-right">Payment Done</th>
         <th class="text-right">Balance</th>
@@ -618,7 +698,7 @@ tr[draggable="true"]:hover td:first-child::before {
       </tr>
     </thead>
     <tbody id="ledgerBody"></tbody>
-    <tfoot id="ledgerFoot"></tfoot>
+<tbody id="ledgerFoot" class="sticky-footer"></tbody>
   </table>
 </div>
     <p class="tip-text">✏️ Double-click any cell to edit inline</p>
@@ -649,44 +729,74 @@ tr[draggable="true"]:hover td:first-child::before {
 
       <div class="recovery-bar-wrap">
         <div class="recovery-bar-labels">
-          <span class="text-muted">Recovery Progress</span>
-          <span class="text-green mono" id="recoveryPct">0%</span>
-        </div>
+  <span class="text-muted">Total Recovery Completed</span>
+  <span class="text-green mono" id="recoveryPct">0%</span>
+</div>
         <div class="recovery-track">
           <div class="recovery-fill" id="recoveryFill" style="width:0%"></div>
         </div>
       </div>
+      <div class="recovery-bar-wrap" id="recoveryLeftWrap" style="margin-top:14px">
+  <div class="recovery-bar-labels">
+    <span class="text-muted">Total Balance Re
+    <span class="mono recovery-pct-remaining" id="recoveryLeftPct">0%</span>
+  </div>
+  <div class="recovery-track">
+    <div class="recovery-fill tier-remaining" id="recoveryLeftFill" style="width:0%"></div>
+  </div>
+</div>
+
+<div class="summary-row-live-balance" style="margin-top:10px">
+  <span class="summary-row-label-live">💧 Live Balance Recovery</span>
+  <span class="summary-row-val-live mono" id="recoveryLeftAmount">₹0</span>
+</div>
 
       <div class="summary-rows" id="summaryRows"></div>
 
-      <div class="kothi-row">
-        <span class="kothi-label">🏦 Kothi Capital</span>
-        <span class="kothi-value mono" id="kothiValue">₹0</span>
-      </div>
+      <div class="kothi-row" id="kothiRow">
+  <span class="kothi-label">🏦 Kothi Capital</span>
+  <span class="slot-card-kothi-val-wrap">
+    <span class="kothi-value mono" id="kothiValue">₹0</span>
+    <button type="button" class="kothi-edit-btn" id="kothiEditBtn" title="Edit Kothi Capital">✎</button>
+  </span>
+</div>
+
+<div class="kothi-row received-capital-row" id="receivedCapitalRow" style="margin-top:10px">
+  <span class="kothi-label">💼 Received Capital</span>
+  <span class="slot-card-kothi-val-wrap">
+    <span class="kothi-value mono" id="receivedCapitalValue">₹0</span>
+    <button type="button" class="kothi-edit-btn" id="receivedCapitalEditBtn" title="Edit Received Capital">✎</button>
+  </span>
+</div>
     </div>
   </div>
 
 </div>
 
 <!-- DAILY LEDGER -->
-<div class="daily-section" id="dailySection">
-  <div class="daily-header">
-    <div class="daily-header-left">
-      <h2 class="daily-title">📅 Daily Ledger — Devanam/Pawana</h2>
-    </div>
-    <div class="daily-stats" id="dailyStats"></div>
+<div class="daily-header">
+  <div class="daily-header-left">
+    <h2 class="daily-title">📅 Daily Ledger — Devanam/Pawana</h2>
   </div>
+  <button class="btn-gold" onclick="openDailyEntryModal()">+ Ledger Entry</button>
+</div>
 
-  <div class="opening-pawana-box" id="openingPawanaBox">
-    <label class="opening-pawana-label" for="openingPawanaInput">Previous Month Closing Amount</label>
-    <input
-      type="number"
-      class="opening-pawana-input"
-      id="openingPawanaInput"
-      placeholder="e.g. 24000"
-      oninput="handleOpeningPawanaInput()"
-    />
-    <span class="opening-pawana-hint">Seeds Devanam/Pawana for the 1st of this month. Enter manually each new month.</span>
+  <div class="daily-boxes-row" style="display:flex; gap:16px; flex-wrap:wrap;">
+    <div class="opening-pawana-box" id="openingPawanaBox">
+      <label class="opening-pawana-label" for="openingPawanaInput">Previous Month Closing Dewanam/Pawana</label>
+      <input
+        type="number"
+        class="opening-pawana-input"
+        id="openingPawanaInput"
+        placeholder="e.g. 24000"
+        oninput="handleOpeningPawanaInput()"
+      />
+    </div>
+
+    <div class="opening-pawana-box" id="suggestedTargetBox">
+      <label class="opening-pawana-label">Suggested Daily Target (Running Funding ÷ 50)</label>
+      <div class="opening-pawana-input" id="suggestedTargetVal" style="display:flex;align-items:center;">₹0</div>
+    </div>
   </div>
 
   <div class="daily-grid-wrap">
@@ -714,7 +824,7 @@ tr[draggable="true"]:hover td:first-child::before {
         </tr>
       </thead>
       <tbody id="dailyBody"></tbody>
-      <tfoot id="dailyFoot"></tfoot>
+<tbody id="dailyFoot" class="sticky-footer"></tbody>
     </table>
   </div>
 </div>
@@ -733,9 +843,9 @@ tr[draggable="true"]:hover td:first-child::before {
         <input class="input-dark" id="f_name" placeholder="e.g. Sunita Mishra" />
       </div>
       <div class="form-group">
-        <label class="form-label">Opening Date</label>
-        <input type="date" class="input-dark" id="f_date" />
-      </div>
+  <label class="form-label">Opening Date</label>
+  <input type="date" class="input-dark" id="f_date" lang="en-GB" />
+</div>
       <div class="form-group">
         <label class="form-label">Funding Amount (₹)</label>
         <input type="number" class="input-dark" id="f_funding" placeholder="e.g. 10000" oninput="updateCalcPreview()" />
@@ -751,7 +861,7 @@ tr[draggable="true"]:hover td:first-child::before {
       <div class="calc-grid">
         <span class="text-muted" id="modal_profit_label">Profit:</span>
         <span class="text-green mono" id="c_profit">₹0</span>
-        <span class="text-muted">8% Commission:</span>
+        <span class="text-muted" id="modal_staff_label">6% Commission:</span>
         <span class="text-yellow mono" id="c_comm">₹0</span>
         <span class="text-muted">Total Due:</span>
         <span class="text-rupee mono" id="c_due">₹0</span>
@@ -798,6 +908,35 @@ tr[draggable="true"]:hover td:first-child::before {
   </div>
 </div>
 
+<!-- DAILY COLLECTION ENTRY MODAL -->
+<div class="modal-overlay" id="dailyEntryModal" style="display:none" onclick="handleDailyEntryOverlayClick(event)">
+  <div class="modal-box">
+    <h2 class="modal-title">💰 Add Daily Collection</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" class="input-dark" id="de_date" lang="en-GB" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Income (₹)</label>
+        <input type="number" class="input-dark" id="de_income" placeholder="e.g. 5000" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Khata (₹)</label>
+        <input type="number" class="input-dark" id="de_khata" placeholder="0" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target Income (₹)</label>
+        <input type="number" class="input-dark" id="de_target" placeholder="e.g. 5000" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeDailyEntryModal()">Cancel</button>
+      <button class="btn-gold" onclick="submitDailyEntry()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast" class="toast" style="display:none"></div>
 
@@ -816,6 +955,7 @@ tr[draggable="true"]:hover td:first-child::before {
   });
 </script>
 
-<script src="/static/js/app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="/static/js/app.js?v=2"></script>
 </body>
 </html>

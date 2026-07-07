@@ -32,22 +32,33 @@ function escHtml(s) {
 // ─── Profit rate helper ──────────────────────────────────────────────
 function getActiveSlotRates() {
   const slot = slots.find(s => s.id === activeSlotId);
-  const isRaigarh = slot?.slot_name?.toLowerCase().includes('raigarh');
-  const profitRate = isRaigarh ? 0.22 : 0.28;
-  const staffRate  = 0.08;
-  const netRate    = profitRate - staffRate;
-  const totalRate  = 1 + profitRate;
+  const name = slot?.slot_name?.toLowerCase() || '';
+
+  const profitRate = name.includes('raigarh') ? 0.22 : 0.28;
+
+  let staffRate, netRate;
+  if (name.includes('raigarh')) {
+    staffRate = 0.08; netRate = 0.14;
+  } else if (name.includes('gomti nagar')) {
+    staffRate = 0.08; netRate = 0.20;
+  } else if (name.includes('barabanki')) {
+    staffRate = 0.08; netRate = 0.20;
+  } else if (name.includes('arjun ganj') || name.includes('arjunganj')) {
+    staffRate = 0.08; netRate = 0.20;
+  } else if (name.includes('lucknow') || name.includes('tedhi puliya') || name.includes('azad nagar') || name.includes('azaad nagar')) {
+    staffRate = 0.06; netRate = 0.22;
+  } else if (name.includes('aashram') || name.includes('ashram')) {
+    staffRate = 0.06; netRate = 0.28;
+  } else {
+    staffRate = 0.06; netRate = profitRate - staffRate;
+  }
+
+  const totalRate = 1 + profitRate;
   return { profitRate, staffRate, netRate, totalRate };
 }
-function profitPctLabel()   { return slots.find(s => s.id === activeSlotId)?.slot_name?.toLowerCase().includes('raigarh') ? '22%' : '28%'; }
-function netIncomePctLabel(){ return slots.find(s => s.id === activeSlotId)?.slot_name?.toLowerCase().includes('raigarh') ? '14%' : '20%'; }
-
-// ─── Live balance helper ─────────────────────────────────────────────
-function getLiveBalance() {
-  const rawBalance = Number(summary?.total_balance_recovery || 0);
-  const totalDailyIncome = dailyData.reduce((sum, d) => sum + Number(d.amount_collected || 0), 0);
-  return rawBalance - totalDailyIncome;
-}
+function profitPctLabel()   { const { profitRate } = getActiveSlotRates(); return `${Math.round(profitRate * 100)}%`; }
+function staffPctLabel()    { const { staffRate }  = getActiveSlotRates(); return `${Math.round(staffRate * 100)}%`; }
+function netIncomePctLabel(){ const { netRate }    = getActiveSlotRates(); return `${Math.round(netRate * 100)}%`; }
 
 // ─── API ─────────────────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -138,7 +149,7 @@ function applyRoleRestrictions() {
   const style = document.createElement('style');
   style.id = 'viewerLockStyle';
   style.textContent = `
-    .btn-gold, .btn-carry, .status-btn, .del-btn { display: none !important; }
+    .btn-gold, .btn-carry, .status-btn, .del-btn, .kothi-edit-btn { display: none !important; }
     td.editable {
       cursor: default !important;
       pointer-events: none;
@@ -158,6 +169,7 @@ function applyRoleRestrictions() {
 function renderSlotCards() {
   const grid = document.getElementById('slotCardGrid');
   grid.innerHTML = '';
+
   slots.forEach(s => {
     const card = document.createElement('div');
     card.className = 'slot-card';
@@ -168,11 +180,212 @@ function renderSlotCards() {
         <span class="slot-card-kothi-label">Kothi Capital</span>
         <span class="slot-card-kothi-val">₹${fmt(s.kothi_amount)}</span>
       </div>
+      <div class="slot-card-kothi" style="margin-top:2px">
+        <span class="slot-card-kothi-label">Received Capital</span>
+        <span class="slot-card-kothi-val" style="color:var(--sapphire)">₹${fmt(s.received_capital)}</span>
+      </div>
+      <div class="slot-card-kothi" style="margin-top:2px">
+        <span class="slot-card-kothi-label">Income (This Month)</span>
+        <span class="slot-card-kothi-val" style="color:var(--emerald)">₹${fmt(s.total_income_this_month)}</span>
+      </div>
+      <div class="slot-card-kothi" style="margin-top:2px">
+        <span class="slot-card-kothi-label">Khata (This Month)</span>
+        <span class="slot-card-kothi-val" style="color:var(--violet)">₹${fmt(s.total_khata_this_month)}</span>
+      </div>
       <div class="slot-card-cta">View Ledger →</div>
     `;
     card.addEventListener('click', () => openSlot(s.id));
     grid.appendChild(card);
   });
+}
+
+let recoveryChartInstance = null;
+function renderRecoveryChart() {
+  const canvas = document.getElementById('recoveryChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+
+  const ctx = canvas.getContext('2d');
+  const isMobile = window.innerWidth <= 640;
+
+  const labels = slots.map(s => s.slot_name);
+const data   = slots.map(s => Number(s.achieved_pct || 0));
+
+// Color each bar by its own recovery percentage tier
+function tierColorsFor(pct) {
+  if (pct < 25)  return ['#F87171', '#B91C1C']; // dark red
+  if (pct < 50)  return ['#FECACA', '#FCA5A5']; // light red
+  if (pct < 75)  return ['#BBF7D0', '#86EFAC']; // light green
+  return ['#34D399', '#0B7B52'];                // good green
+}
+const gradients = data.map(pct => {
+  const [from, to] = tierColorsFor(pct);
+  const g = ctx.createLinearGradient(0, 0, 0, 300);
+  g.addColorStop(0, from);
+  g.addColorStop(1, to);
+  return g;
+});
+
+  if (recoveryChartInstance) recoveryChartInstance.destroy();
+
+  recoveryChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Recovery %',
+        data,
+        backgroundColor: gradients,
+        borderRadius: 10,
+        borderSkipped: false,
+        maxBarThickness: isMobile ? 30 : 52,
+        hoverBackgroundColor: gradients,
+      }],
+    },
+    options: {
+      indexAxis: isMobile ? 'y' : 'x',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0D1B3E',
+          titleFont: { family: 'Sora', weight: '700', size: 13 },
+          bodyFont: { family: 'JetBrains Mono', size: 13 },
+          padding: 12,
+          cornerRadius: 8,
+          displayColors: false,
+          callbacks: { label: (ctx) => `${ctx.parsed[isMobile ? 'x' : 'y']}% achieved` },
+        },
+      },
+      scales: isMobile ? {
+        x: {
+          beginAtZero: true, max: 100,
+          ticks: { callback: (v) => v + '%', font: { size: 11 } },
+          grid: { color: '#EDF1FB' },
+        },
+        y: {
+          grid: { display: false },
+          ticks: { font: { family: 'Sora', weight: '600', size: 12 } },
+        },
+      } : {
+        y: {
+          beginAtZero: true, max: 100,
+          ticks: { callback: (v) => v + '%', font: { size: 12 } },
+          grid: { color: '#EDF1FB' },
+        },
+        x: {
+          grid: { display: false },
+          ticks: { font: { family: 'Sora', weight: '600', size: 12 } },
+        },
+      },
+    },
+  });
+}
+
+function startKothiEdit(slotId, btn) {
+  const row  = document.getElementById('kothiRow');
+  const slot = slots.find(s => s.id === slotId);
+  if (!slot || !row) return;
+
+  row.innerHTML = `
+    <span class="kothi-label">🏦 Kothi Capital</span>
+    <span class="slot-card-kothi-edit-wrap">
+      <input type="number" class="kothi-edit-input" id="kothiEditInput" value="${slot.kothi_amount || 0}" />
+      <button type="button" class="kothi-save-btn" title="Save">✓</button>
+      <button type="button" class="kothi-cancel-btn" title="Cancel">✕</button>
+    </span>
+  `;
+
+  const input     = row.querySelector('#kothiEditInput');
+  const saveBtn   = row.querySelector('.kothi-save-btn');
+  const cancelBtn = row.querySelector('.kothi-cancel-btn');
+
+  input.focus();
+  input.select();
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); saveKothiEdit(slotId, input.value); }
+    if (e.key === 'Escape') { e.preventDefault(); renderSummary(); }
+  });
+
+  saveBtn.addEventListener('click', () => saveKothiEdit(slotId, input.value));
+  cancelBtn.addEventListener('click', () => renderSummary());
+}
+
+async function saveKothiEdit(slotId, value) {
+  const amount = Number(value);
+  if (isNaN(amount) || amount < 0) {
+    showToast('Please enter a valid amount', 'error');
+    return;
+  }
+  const slot = slots.find(s => s.id === slotId);
+  if (!slot) return;
+
+  try {
+    const updated = await api('PUT', `/slots/${slotId}`, {
+      slot_name:    slot.slot_name,
+      kothi_amount: amount,
+    });
+    slot.kothi_amount = updated.kothi_amount;
+    renderSummary();
+    showToast('Kothi Capital updated');
+  } catch (e) {
+    showToast(e.message || 'Failed to update Kothi Capital', 'error');
+  }
+}
+
+function startReceivedCapitalEdit(slotId, btn) {
+  const row  = document.getElementById('receivedCapitalRow');
+  const slot = slots.find(s => s.id === slotId);
+  if (!slot || !row) return;
+
+  row.innerHTML = `
+    <span class="kothi-label">💼 Received Capital</span>
+    <span class="slot-card-kothi-edit-wrap">
+      <input type="number" class="kothi-edit-input" id="receivedCapitalEditInput" value="${slot.received_capital || 0}" />
+      <button type="button" class="kothi-save-btn" title="Save">✓</button>
+      <button type="button" class="kothi-cancel-btn" title="Cancel">✕</button>
+    </span>
+  `;
+
+  const input     = row.querySelector('#receivedCapitalEditInput');
+  const saveBtn   = row.querySelector('.kothi-save-btn');
+  const cancelBtn = row.querySelector('.kothi-cancel-btn');
+
+  input.focus();
+  input.select();
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); saveReceivedCapitalEdit(slotId, input.value); }
+    if (e.key === 'Escape') { e.preventDefault(); renderSummary(); }
+  });
+
+  saveBtn.addEventListener('click', () => saveReceivedCapitalEdit(slotId, input.value));
+  cancelBtn.addEventListener('click', () => renderSummary());
+}
+
+async function saveReceivedCapitalEdit(slotId, value) {
+  const amount = Number(value);
+  if (isNaN(amount) || amount < 0) {
+    showToast('Please enter a valid amount', 'error');
+    return;
+  }
+  const slot = slots.find(s => s.id === slotId);
+  if (!slot) return;
+
+  try {
+    const updated = await api('PUT', `/slots/${slotId}`, {
+      slot_name:        slot.slot_name,
+      kothi_amount:     slot.kothi_amount,
+      received_capital: amount,
+    });
+    slot.received_capital = updated.received_capital;
+    renderSummary();
+    showToast('Received Capital updated');
+  } catch (e) {
+    showToast(e.message || 'Failed to update Received Capital', 'error');
+  }
 }
 
 function setSlotActionsVisible(visible) {
@@ -181,12 +394,14 @@ function setSlotActionsVisible(visible) {
   const addBtn      = document.querySelector('.header-controls .btn-gold');
   const monthSelect = document.getElementById('monthSelect');
   const searchWrap  = document.getElementById('headerSearchWrap');
+  
+  const slotTitle   = document.getElementById('headerSlotTitle');
   if (carryBtn)    carryBtn.style.display    = display;
   if (addBtn)      addBtn.style.display      = display;
   if (monthSelect) monthSelect.style.display = display;
   if (searchWrap)  searchWrap.style.display  = visible ? 'flex' : 'none';
+  if (slotTitle)   slotTitle.style.display   = visible ? 'inline-block' : 'none';
 }
-
 async function openSlot(id) {
   activeSlotId = id;
   document.getElementById('welcomeView').style.display = 'none';
@@ -247,8 +462,10 @@ function buildMonthSelector() {
 async function loadData() {
   if (!activeSlotId) return;
   const slot = slots.find(s => s.id === activeSlotId);
-  document.getElementById('tableTitle').textContent =
-    `${slot ? slot.slot_name : ''} — ${monthLabel(monthYear)}`;
+  const titleText = `${slot ? slot.slot_name : ''} — ${monthLabel(monthYear)}`;
+  document.getElementById('tableTitle').textContent = titleText;
+  const headerSlotTitle = document.getElementById('headerSlotTitle');
+  if (headerSlotTitle) headerSlotTitle.textContent = titleText;
   document.getElementById('loadingText').style.display = 'inline';
   try {
     const [cust, sum] = await Promise.all([
@@ -277,8 +494,10 @@ function renderTable() {
   tfoot.innerHTML = '';
 
   const profitTh    = document.getElementById('th_profit');
+  const staffTh     = document.getElementById('th_staff_comm');
   const netIncomeTh = document.getElementById('th_net_income');
   if (profitTh)    profitTh.textContent    = `Profit ${profitPctLabel()}`;
+  if (staffTh)     staffTh.textContent     = `Staff Comm (${staffPctLabel()})`;
   if (netIncomeTh) netIncomeTh.textContent = `Net Income`;
 
   if (customers.length === 0) {
@@ -323,11 +542,16 @@ function renderTable() {
     `;
     tbody.appendChild(tr);
   });
+   if (customers.length > 0) {
+    const spacer = document.createElement('tr');
+    spacer.innerHTML = `<td colspan="12" style="height:64px;padding:0;border:none;"></td>`;
+    tbody.appendChild(spacer);
+  }
 
   // ── Inline edit ──
   tbody.querySelectorAll('td.editable').forEach(td => {
-    td.addEventListener('dblclick', () => startInlineEdit(td));
-  });
+  td.addEventListener('click', () => startInlineEdit(td));
+});
 
   // ── Status toggle ──
   tbody.querySelectorAll('.status-btn').forEach(btn => {
@@ -365,18 +589,18 @@ function renderTable() {
 
   // ── Footer totals ──
   if (summary) {
-    tfoot.innerHTML = `<tr>
-      <td colspan="3" class="text-right text-muted" style="font-size:0.75rem;padding-right:12px">TOTALS</td>
-      <td class="text-right text-blue"   style="font-weight:700">₹${fmt(summary.this_month_funding)}</td>
-      <td class="text-right text-green"  style="font-weight:700">₹${fmt(summary.total_profit_28)}</td>
-      <td class="text-right text-yellow" style="font-weight:700">₹${fmt(summary.total_staff_commission)}</td>
-      <td class="text-right text-purple" style="font-weight:700">₹${fmt(summary.total_funding_and_profit)}</td>
-      <td class="text-right text-slate2" style="font-weight:700">₹${fmt(summary.actual_recovery)}</td>
-      <td class="text-right text-red"    style="font-weight:700">₹${fmt(summary.total_balance_recovery)}</td>
-      <td class="text-right text-rupee"  style="font-weight:700">₹${fmt(summary.total_net_income)}</td>
-      <td colspan="2"></td>
-    </tr>`;
-  }
+  tfoot.innerHTML = `<tr>
+    <td colspan="3" class="text-right footer-label-highlight footer-green" style="padding-right:12px">THIS MONTH FUNDING</td>
+    <td class="text-right footer-highlight footer-green">₹${fmt(summary.this_month_funding)}</td>
+    <td class="text-right text-green"  style="font-weight:700">₹${fmt(summary.total_profit_28)}</td>
+    <td class="text-right footer-highlight footer-green">₹${fmt(summary.total_staff_commission)}</td>
+    <td class="text-right text-purple" style="font-weight:700">₹${fmt(summary.total_funding_and_profit)}</td>
+    <td class="text-right text-slate2" style="font-weight:700">₹${fmt(summary.actual_recovery)}</td>
+    <td class="text-right text-red"    style="font-weight:700">₹${fmt(summary.total_balance_recovery)}</td>
+    <td class="text-right text-rupee"  style="font-weight:700">₹${fmt(summary.total_net_income)}</td>
+    <td colspan="2"></td>
+  </tr>`;
+}
 
   // ── Enable drag-and-drop (admin only) ──
   if (isAdmin) enableRowDragging();
@@ -572,18 +796,23 @@ function startInlineEdit(td) {
   const isDate = field === 'opening_date';
 
   const input = document.createElement('input');
-  input.className = isName ? 'inline-input-name' : 'inline-input';
-  input.type      = isDate ? 'date' : (isName ? 'text' : 'number');
-  input.value     = val || '';
-  if (isName || isDate) input.style.textAlign = 'left';
+input.className = isName ? 'inline-input-name' : 'inline-input';
+input.type      = isDate ? 'date' : (isName ? 'text' : 'number');
+input.value     = val || '';
+if (isDate) input.setAttribute('lang', 'en-GB');
+if (isName || isDate) input.style.textAlign = 'left';
 
   td.textContent = '';
   td.appendChild(input);
   input.focus();
+  if (!isDate) input.select();
 
-  input.addEventListener('blur',    () => commitEdit(input.value));
+  input.addEventListener('blur', () => commitEdit(input.value));
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  commitEdit(input.value);
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitEdit(input.value, { moveNext: true });
+    }
     if (e.key === 'Escape') cancelInlineEdit();
   });
 }
@@ -601,7 +830,7 @@ function cancelInlineEdit() {
   editingCell = null;
 }
 
-async function commitEdit(newVal) {
+async function commitEdit(newVal, opts = {}) {
   if (!editingCell) return;
   const { id, field, td } = editingCell;
   editingCell = null;
@@ -617,6 +846,8 @@ async function commitEdit(newVal) {
     }
     payloadVal = n;
   }
+
+  const currentIndex = customers.findIndex(c => c.id === id);
 
   try {
     await api('PUT', `/customers/${id}`, { [field]: payloadVal });
@@ -637,6 +868,14 @@ async function commitEdit(newVal) {
     renderTable();
     renderSummary();
     renderDailyCollections();
+
+    if (opts.moveNext && currentIndex >= 0 && currentIndex < customers.length - 1) {
+      const nextCustomer = customers[currentIndex + 1];
+      const nextTd = document.querySelector(
+        `#ledgerBody tr[data-id="${nextCustomer.id}"] td[data-field="${field}"]`
+      );
+      if (nextTd) startInlineEdit(nextTd);
+    }
   } catch (e) {
     showToast(e.message || 'Update failed', 'error');
     renderTable();
@@ -652,37 +891,106 @@ function renderSummary() {
   document.getElementById('customerBadge').textContent = `${summary.total_customers || 0} customers`;
 
   const total     = Number(summary.total_funding_and_profit) || 0;
-  const recovered = Number(summary.actual_recovery) || 0;
-  const pct       = total > 0 ? Math.min((recovered / total * 100), 100).toFixed(1) : 0;
-  document.getElementById('recoveryPct').textContent  = `${pct}%`;
-  document.getElementById('recoveryFill').style.width = `${pct}%`;
+const rawBalance       = Number(summary.total_balance_recovery || 0);
+const actualRecovery   = Number(summary.actual_recovery || 0);
+const totalDailyIncome = dailyData.reduce((sum, d) => sum + Number(d.amount_collected || 0), 0);
+const liveBalance      = rawBalance - totalDailyIncome;
 
-  const slot = slots.find(s => s.id === activeSlotId);
-  document.getElementById('kothiValue').textContent = `₹${fmt(slot?.kothi_amount)}`;
+// Total Recovery Done = money actually recovered so far
+const recoveredAmount = actualRecovery + totalDailyIncome;
+const pct = total > 0 ? Math.max(0, Math.min((recoveredAmount / total * 100), 100)).toFixed(1) : 0;
+const pctNum = Number(pct);
 
-  const pLabel   = profitPctLabel();
-  const netLabel = netIncomePctLabel();
+// Total Recovery Left = what's still outstanding (previous calculation)
+const leftPct = total > 0 ? Math.max(0, Math.min((liveBalance / total * 100), 100)).toFixed(1) : 0;
 
-  const rawBalance       = Number(summary.total_balance_recovery || 0);
-  const totalDailyIncome = dailyData.reduce((sum, d) => sum + Number(d.amount_collected || 0), 0);
-  const liveBalance      = rawBalance - totalDailyIncome;
-  const closedFunding    = Number(summary.closed_funding_total || 0);
+let tierClass, pctClass;
+if (pctNum < 25) {
+  tierClass = 'tier-critical'; pctClass = 'recovery-pct-critical';
+} else if (pctNum < 50) {
+  tierClass = 'tier-low'; pctClass = 'recovery-pct-low';
+} else if (pctNum < 75) {
+  tierClass = 'tier-mid'; pctClass = 'recovery-pct-mid';
+} else {
+  tierClass = 'tier-good'; pctClass = 'recovery-pct-good';
+}
+
+const pctEl  = document.getElementById('recoveryPct');
+const fillEl = document.getElementById('recoveryFill');
+
+pctEl.textContent  = `${pct}%`;
+fillEl.style.width = `${pct}%`;
+
+pctEl.className  = `mono ${pctClass}`;
+fillEl.className = `recovery-fill ${tierClass}`;
+
+// ── NEW: Total Recovery Left bar ──
+const leftPctEl    = document.getElementById('recoveryLeftPct');
+const leftFillEl   = document.getElementById('recoveryLeftFill');
+const leftAmountEl = document.getElementById('recoveryLeftAmount');
+if (leftPctEl && leftFillEl) {
+  leftPctEl.textContent  = `${leftPct}%`;
+  leftFillEl.style.width = `${leftPct}%`;
+}
+if (leftAmountEl) {
+  leftAmountEl.textContent = `₹${fmt(liveBalance)}`;
+}
+
+const slot = slots.find(s => s.id === activeSlotId);
+
+const kothiRow = document.getElementById('kothiRow');
+if (kothiRow) {
+  kothiRow.innerHTML = `
+    <span class="kothi-label">🏦 Kothi Capital</span>
+    <span class="slot-card-kothi-val-wrap">
+      <span class="kothi-value mono" id="kothiValue">₹${fmt(slot?.kothi_amount)}</span>
+      <button type="button" class="kothi-edit-btn" id="kothiEditBtn" title="Edit Kothi Capital">✎</button>
+    </span>
+  `;
+  const kothiEditBtn = document.getElementById('kothiEditBtn');
+  if (kothiEditBtn) {
+    kothiEditBtn.onclick = () => startKothiEdit(activeSlotId, kothiEditBtn);
+  }
+}
+
+const receivedCapitalRow = document.getElementById('receivedCapitalRow');
+if (receivedCapitalRow) {
+  receivedCapitalRow.innerHTML = `
+    <span class="kothi-label">💼 Received Capital</span>
+    <span class="slot-card-kothi-val-wrap">
+      <span class="kothi-value mono" id="receivedCapitalValue">₹${fmt(slot?.received_capital)}</span>
+      <button type="button" class="kothi-edit-btn" id="receivedCapitalEditBtn" title="Edit Received Capital">✎</button>
+    </span>
+  `;
+  const receivedCapitalEditBtn = document.getElementById('receivedCapitalEditBtn');
+  if (receivedCapitalEditBtn) {
+    receivedCapitalEditBtn.onclick = () => startReceivedCapitalEdit(activeSlotId, receivedCapitalEditBtn);
+  }
+}
+
+const pLabel   = profitPctLabel();
+const netLabel = netIncomePctLabel();
+
+const closedFunding    = Number(summary.closed_funding_total || 0);
+const totalRunningFund = Number(summary.running_funding || 0) - closedFunding;
 
   const rows = [
-    { label: 'This Month Funding',           val: summary.this_month_funding,       color: 'text-blue' },
-    { label: 'Total Running Funding',         val: summary.running_funding,           color: 'text-sky' },
-    { label: '✅ Closed Funding',             val: closedFunding,                     color: 'text-slate2', isClosed: true },
-    { label: 'Total Funding + Profit',        val: summary.total_funding_and_profit,  color: 'text-purple' },
-    { label: 'Actual Recovery ( Upto Previous Month )',               val: summary.actual_recovery,           color: 'text-green' },
-     { label: 'Total Income Collected In This Month',     val: totalDailyIncome,                  color: 'text-green' },
-    { label: '⚡ Live Balance (Updated according to Daily Income)', val: liveBalance,                       color: liveBalance <= 0 ? 'text-green' : 'text-orange', isLive: true },
-    { label: `Total Profit (${pLabel})`,      val: summary.total_profit_28,           color: 'text-emerald' },
-    { label: 'Staff Commission (8%)',         val: summary.total_staff_commission,    color: 'text-yellow' },
-    { label: `Net Income (${netLabel})`,      val: summary.total_net_income,          color: 'text-rupee' },
-  ];
+    { label: '🔄 Total Running Funding (Total Funding (−) Closed Funding)', val: totalRunningFund, color: 'text-sky' },
+  { label: 'This Month Funding',           val: summary.this_month_funding,       color: 'text-green', isHighlight: true },
+  { label: `Net Income (${netLabel})`,      val: summary.total_net_income,          color: 'text-green', isHighlight: true },
+  { label: `Staff Commission (${staffPctLabel()})`, val: summary.total_staff_commission, color: 'text-green', isHighlight: true },
+  { label: '✅ This Month Closed Funding',             val: closedFunding,                     color: 'text-green', isHighlight: true },
+  { label: 'Total Income Collected In This Month',     val: totalDailyIncome,                  color: 'text-green', isHighlight: true },
+  { label: 'Total Funding',         val: summary.running_funding,           color: 'text-sapphire', isHighlightBlue: true },
+  { label: `Total Profit (${pLabel})`,      val: summary.total_profit_28,           color: 'text-sapphire', isHighlightBlue: true },
+  { label: 'Total Funding + Profit',        val: summary.total_funding_and_profit,  color: 'text-sapphire', isHighlightBlue: true },
+  { label: 'Previous Month Recovery',               val: summary.actual_recovery,           color: 'text-sapphire', isHighlightBlue: true },
+  { label: 'Balance',                       val: summary.total_balance_recovery,    color: 'text-sapphire', isHighlightBlue: true },
+   
+];
 
   document.getElementById('summaryRows').innerHTML = rows.map(r => `
-    <div class="summary-row${r.isLive ? ' summary-row-live' : ''}${r.isClosed ? ' summary-row-closed' : ''}">
+    <div class="summary-row${r.isLive ? ' summary-row-live' : ''}${r.isClosed ? ' summary-row-closed' : ''}${r.isHighlight ? ' summary-row-highlight-green' : ''}${r.isHighlightBlue ? ' summary-row-highlight-blue' : ''}">
       <span class="summary-row-label">${r.label}</span>
       <span class="summary-row-val ${r.color}">₹${fmt(r.val)}</span>
     </div>
@@ -701,6 +1009,8 @@ function openAddModal() {
 
   const profitLabelEl = document.getElementById('modal_profit_label');
   if (profitLabelEl) profitLabelEl.textContent = `${profitPctLabel()} Profit:`;
+  const staffLabelEl = document.getElementById('modal_staff_label');
+  if (staffLabelEl) staffLabelEl.textContent = `${staffPctLabel()} Commission:`;
 
   document.getElementById('addModal').style.display = 'flex';
 }
@@ -742,6 +1052,84 @@ async function submitAddCustomer() {
     showToast(e.message || 'Error adding customer', 'error');
   }
 }
+// ─── Daily Collection Quick-Entry Modal ──────────────────────────────
+function openDailyEntryModal() {
+  if (currentRole !== 'admin') return;
+  if (!activeSlotId) { showToast('Please open a slot first.', 'error'); return; }
+  document.getElementById('de_date').value   = new Date().toISOString().split('T')[0];
+  document.getElementById('de_income').value = '';
+  document.getElementById('de_khata').value  = '';
+  document.getElementById('de_target').value = '';
+  document.getElementById('dailyEntryModal').style.display = 'flex';
+}
+function closeDailyEntryModal() { document.getElementById('dailyEntryModal').style.display = 'none'; }
+function handleDailyEntryOverlayClick(e) {
+  if (e.target === document.getElementById('dailyEntryModal')) closeDailyEntryModal();
+}
+
+async function submitDailyEntry() {
+  const dateVal = document.getElementById('de_date').value;
+  const income  = document.getElementById('de_income').value || 0;
+  const khata   = document.getElementById('de_khata').value || 0;
+  const target  = document.getElementById('de_target').value || 0;
+
+  if (!activeSlotId) { showToast('No slot selected', 'error'); return; }
+  if (!dateVal)       { showToast('Please pick a date', 'error'); return; }
+
+  const [yy, mm, dd] = dateVal.split('-').map(Number);
+  const entryMonthYear = `${yy}-${String(mm).padStart(2, '0')}`;
+  const dayNumber       = dd;
+
+  try {
+    await api('POST', '/daily-collections', {
+      slot_id:      activeSlotId,
+      month_year:   entryMonthYear,
+      day_number:   dayNumber,
+      amount:       Number(income),
+      khata_amount: Number(khata),
+    });
+    if (Number(target) > 0) {
+      await api('POST', '/daily-collections/target', {
+        slot_id:       activeSlotId,
+        month_year:    entryMonthYear,
+        day_number:    dayNumber,
+        target_income: Number(target),
+      });
+    }
+
+    showToast('Entry saved!');
+    closeDailyEntryModal();
+
+    // If the picked date is in a different month, switch the view to it
+    if (entryMonthYear !== monthYear) {
+      const sel = document.getElementById('monthSelect');
+      let opt = Array.from(sel.options).find(o => o.value === entryMonthYear);
+      if (!opt) { opt = new Option(monthLabel(entryMonthYear), entryMonthYear); sel.insertBefore(opt, sel.options[0]); }
+      sel.value = entryMonthYear;
+      monthYear = entryMonthYear;
+    }
+    await loadData();
+  } catch (e) {
+    showToast(e.message || 'Error saving entry', 'error');
+  }
+}
+// ─── % Achieved (Daily Ledger) per slot, for the welcome-screen chart ──
+async function computeAchievedPct() {
+  const my = currentMonthYear();
+  await Promise.all(slots.map(async (s) => {
+    try {
+      const res = await api('GET', `/daily-collections/${s.id}/${my}`);
+      const days = res.days || [];
+      const totalIncome = days.reduce((sum, d) => sum + Number(d.amount_collected || 0), 0);
+      const totalTarget = days.reduce((sum, d) => sum + Number(d.target_income || 0), 0);
+      s.achieved_pct = totalTarget > 0
+        ? Number(((totalIncome / totalTarget) * 100).toFixed(1))
+        : 0;
+    } catch {
+      s.achieved_pct = 0;
+    }
+  }));
+}
 
 // ─── Init ────────────────────────────────────────────────────────────
 async function startApp() {
@@ -749,8 +1137,10 @@ async function startApp() {
   initHistoryState();
   setSlotActionsVisible(false);
   try {
-    slots = await api('GET', '/slots');
+    slots = await api('GET', `/slots?month_year=${currentMonthYear()}`);
+    await computeAchievedPct();
     renderSlotCards();
+    renderRecoveryChart();
     showWelcome();
     document.getElementById('homeBtn').addEventListener('click', goToWelcomeWithHistory);
   } catch {
@@ -895,30 +1285,41 @@ function renderDailyCollections() {
   tbody.innerHTML = '';
   tfoot.innerHTML = '';
 
-  const rawBalance       = Number(summary?.total_balance_recovery || 0);
-  const totalDailyIncome = dailyData.reduce((sum, d) => sum + Number(d.amount_collected || 0), 0);
-  const liveBalance      = rawBalance - totalDailyIncome;
-  const TARGET_DAYS      = 64;
-  const dailyTarget      = liveBalance > 0 ? liveBalance / TARGET_DAYS : 0;
+ const rawBalance          = Number(summary?.total_balance_recovery || 0);
+  const totalDailyIncome    = dailyData.reduce((sum, d) => sum + Number(d.amount_collected || 0), 0);
+  const liveBalance         = rawBalance - totalDailyIncome;
+ const totalFunding = Number(summary?.running_funding || 0);
+const closedFunding = Number(summary?.closed_funding_total || 0);
+
+// Running Funding = Total Funding − Closed Funding
+const totalRunningFunding = Math.max(0, totalFunding - closedFunding);
+
+// Suggested target = Running Funding / 50
+const suggestedTarget = totalRunningFunding / 50;
+  const suggestedEl = document.getElementById('suggestedTargetVal');
+  if (suggestedEl) suggestedEl.textContent = `₹${fmt(suggestedTarget)}`;
 
   let totalIncome = 0;
   let totalKhata  = 0;
+  let totalTarget = 0;
 
   for (let day = 1; day <= daysInMonth; day++) {
     const rec           = dailyData.find(d => d.day_number === day) || {};
     const income        = Number(rec.amount_collected || 0);
     const khata         = Number(rec.khata_amount || 0);
+    const targetIncome  = Number(rec.target_income || 0);
     const openingPawana = Number(rec.opening_pawana || 0);
     const closingPawana = Number(rec.closing_pawana || 0);
 
     totalIncome += income;
     totalKhata  += khata;
+    totalTarget += targetIncome;
 
     const future      = isFuture(monthYear, day);
     const todayBadge  = isToday(monthYear, day) ? ' today' : '';
     const pawanaClass = closingPawana >= 0 ? 'text-green' : 'text-red';
 
-    let pctAchieved  = dailyTarget > 0 ? (income / dailyTarget) * 100 : 0;
+    let pctAchieved  = targetIncome > 0 ? (income / targetIncome) * 100 : 0;
     let achievedClass = pctAchieved >= 100 ? 'achieved-good' : pctAchieved >= 50 ? 'achieved-mid' : 'achieved-low';
 
     const hasNote = !!dayNotes[day];
@@ -942,37 +1343,47 @@ function renderDailyCollections() {
         </div>
       </td>
       <td class="text-right ${pawanaClass}" style="font-weight:700">₹${fmt(closingPawana)}</td>
-      <td class="text-right target-val">₹${fmt(dailyTarget)}</td>
+      <td class="text-right" style="padding:4px 12px">
+        <input class="collect-input target-input" type="number" value="${targetIncome || ''}" placeholder="0"
+          data-day="${day}" ${future ? 'disabled' : ''} />
+      </td>
       <td class="text-center"><span class="achieved-badge ${achievedClass}">${pctAchieved.toFixed(1)}%</span></td>
     `;
     tbody.appendChild(tr);
   }
+  const spacer = document.createElement('tr');
+  spacer.innerHTML = `<td colspan="8" style="height:44px;padding:0;border:none;"></td>`;
+  tbody.appendChild(spacer);
 
-  tbody.querySelectorAll('.collect-input:not(.khata-input)').forEach(input => {
-    input.addEventListener('input', () => {
+  tbody.querySelectorAll('.collect-input:not(.khata-input):not(.target-input)').forEach(input => {
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
       const day = parseInt(input.dataset.day);
-      clearTimeout(saveTimers[day]);
-      saveTimers[day] = setTimeout(() => saveDaily(day, input.value), 800);
-    });
-    input.addEventListener('blur', () => {
-      const day = parseInt(input.dataset.day);
-      clearTimeout(saveTimers[day]);
-      saveDaily(day, input.value);
-    });
+      saveDaily(day, input.value, true);
+    }
   });
+});
 
-  tbody.querySelectorAll('.khata-input').forEach(input => {
-    input.addEventListener('input', () => {
+ tbody.querySelectorAll('.khata-input').forEach(input => {
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
       const day = parseInt(input.dataset.day);
-      clearTimeout(saveTimers['khata_' + day]);
-      saveTimers['khata_' + day] = setTimeout(() => saveKhata(day, input.value), 800);
-    });
-    input.addEventListener('blur', () => {
-      const day = parseInt(input.dataset.day);
-      clearTimeout(saveTimers['khata_' + day]);
-      saveKhata(day, input.value);
-    });
+      saveKhata(day, input.value, true);
+    }
   });
+});
+
+  tbody.querySelectorAll('.target-input').forEach(input => {
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const day = parseInt(input.dataset.day);
+      saveTarget(day, input.value, true);
+    }
+  });
+});
 
   // ── Khata note button ──
   tbody.querySelectorAll('.note-btn').forEach(btn => {
@@ -984,63 +1395,61 @@ function renderDailyCollections() {
 
   const lastDay      = dailyData.find(d => d.day_number === daysInMonth) || {};
   const finalClosing = Number(lastDay.closing_pawana ?? openingAmount);
-  const overallPct   = (dailyTarget * daysInMonth) > 0
-    ? (totalIncome / (dailyTarget * daysInMonth) * 100) : 0;
-
-  const liveBalClass = liveBalance <= 0 ? 'text-green' : 'text-orange';
-  document.getElementById('dailyStats').innerHTML = `
-    <div class="daily-stat">
-      <span class="daily-stat-label">Opening Pawana (1st)</span>
-      <span class="daily-stat-val text-sky">₹${fmt(openingAmount)}</span>
-    </div>
-    <div class="daily-stat">
-      <span class="daily-stat-label">Total Income (This Month)</span>
-      <span class="daily-stat-val text-green">₹${fmt(totalIncome)}</span>
-    </div>
-    <div class="daily-stat">
-      <span class="daily-stat-label">Total Khata</span>
-      <span class="daily-stat-val text-purple">₹${fmt(totalKhata)}</span>
-    </div>
-    <div class="daily-stat">
-      <span class="daily-stat-label">Closing Pawana</span>
-      <span class="daily-stat-val ${finalClosing >= 0 ? 'text-green' : 'text-red'}">₹${fmt(finalClosing)}</span>
-    </div>
-    <div class="daily-stat daily-stat-live">
-      <span class="daily-stat-label">⚡ Live Balance (after daily)</span>
-      <span class="daily-stat-val ${liveBalClass}">₹${fmt(liveBalance)}</span>
-    </div>
-    <div class="daily-stat">
-      <span class="daily-stat-label">Target/Day (on live balance)</span>
-      <span class="daily-stat-val text-yellow">₹${fmt(dailyTarget)}</span>
-    </div>
-  `;
+  const overallPct   = totalTarget > 0 ? (totalIncome / totalTarget * 100) : 0;
 
   tfoot.innerHTML = `<tr>
-    <td colspan="3" class="text-right text-muted" style="font-size:0.72rem">TOTALS</td>
-    <td class="text-right text-green">₹${fmt(totalIncome)}</td>
-    <td class="text-right text-purple">₹${fmt(totalKhata)}</td>
-    <td class="text-right ${finalClosing >= 0 ? 'text-green' : 'text-red'}">₹${fmt(finalClosing)}</td>
-    <td class="text-right text-yellow">₹${fmt(dailyTarget * daysInMonth)}</td>
-    <td class="text-center">${overallPct.toFixed(1)}%</td>
-  </tr>`;
+  <td class="text-center text-muted" style="font-size:0.72rem"></td>
+  <td class="text-left text-muted" style="font-size:0.72rem">TOTALS</td>
+  <td class="text-right text-muted" style="font-size:0.72rem"></td>
+  <td class="text-right text-green">₹${fmt(totalIncome)}</td>
+  <td class="text-right text-purple">₹${fmt(totalKhata)}</td>
+  <td class="text-right ${finalClosing >= 0 ? 'text-green' : 'text-red'}">₹${fmt(finalClosing)}</td>
+  <td class="text-right text-yellow">₹${fmt(totalTarget)}</td>
+  <td class="text-center">${overallPct.toFixed(1)}%</td>
+</tr>`;
 
   renderSummary();
 }
 
-async function saveDaily(day, value) {
+async function saveDaily(day, value, moveNext) {
   const amount = Number(value) || 0;
   try {
     await api('POST', '/daily-collections', { slot_id: activeSlotId, month_year: monthYear, day_number: day, amount });
     await loadDailyCollections();
+    if (moveNext) focusInputForDay(day + 1, false);
   } catch { showToast('Failed to save', 'error'); }
 }
 
-async function saveKhata(day, value) {
+async function saveKhata(day, value, moveNext) {
   const khata_amount = Number(value) || 0;
   try {
     await api('POST', '/daily-collections/khata', { slot_id: activeSlotId, month_year: monthYear, day_number: day, khata_amount });
     await loadDailyCollections();
+    if (moveNext) focusInputForDay(day + 1, 'khata');
   } catch { showToast('Failed to save Khata', 'error'); }
+}
+
+async function saveTarget(day, value, moveNext) {
+  const target_income = Number(value) || 0;
+  try {
+    await api('POST', '/daily-collections/target', { slot_id: activeSlotId, month_year: monthYear, day_number: day, target_income });
+    await loadDailyCollections();
+    if (moveNext) focusInputForDay(day + 1, 'target');
+  } catch { showToast('Failed to save target', 'error'); }
+}
+
+function focusInputForDay(day, kind) {
+  const daysInMonth = getDaysInMonth(monthYear);
+  if (day > daysInMonth) return;
+  let selector;
+  if (kind === 'target') selector = `.collect-input.target-input[data-day="${day}"]`;
+  else if (kind === true || kind === 'khata') selector = `.collect-input.khata-input[data-day="${day}"]`;
+  else selector = `.collect-input:not(.khata-input):not(.target-input)[data-day="${day}"]`;
+  const input = document.querySelector(selector);
+  if (input && !input.disabled) {
+    input.focus();
+    input.select();
+  }
 }
 
 function handleOpeningPawanaInput() {
@@ -1071,10 +1480,9 @@ function openCarryModal() {
   document.getElementById('carry_from').value = monthLabel(monthYear);
   document.getElementById('carry_to').value   = monthLabel(toMonth);
 
-  const rows = Array.from(document.querySelectorAll('#ledgerBody tr'));
+  const rows = Array.from(document.querySelectorAll('#ledgerBody tr[data-id]'));
   let active = 0, closed = 0;
   rows.forEach(r => {
-    if (r.classList.contains('empty-row')) return;
     r.classList.contains('closed') ? closed++ : active++;
   });
 

@@ -76,11 +76,34 @@ def query(sql, params=(), fetchone=False, commit=False):
     return result
 
 # ─── Profit rate helper ───────────────────────────────────────────────────────
+# ─── Profit rate helper ───────────────────────────────────────────────────────
 def get_profit_rate(slot_id):
     slot = query("SELECT slot_name FROM funding_slots WHERE id=%s", (slot_id,), fetchone=True)
     if slot and 'raigarh' in slot['slot_name'].lower():
         return 0.22
     return 0.28
+
+# ─── Staff commission + Net income rate helper (per-slot fixed rates) ───────
+def get_staff_and_net_rate(slot_id, profit_rate):
+    slot = query("SELECT slot_name FROM funding_slots WHERE id=%s", (slot_id,), fetchone=True)
+    name = slot['slot_name'].lower() if slot else ''
+
+    if 'raigarh' in name:
+        return 0.08, 0.14
+    if 'gomti nagar' in name:
+        return 0.08, 0.20
+    if 'barabanki' in name:
+        return 0.08, 0.20
+    if 'arjun ganj' in name or 'arjunganj' in name:
+        return 0.08, 0.20
+    if 'lucknow' in name or 'tedhi puliya' in name or 'azad nagar' in name or 'azaad nagar' in name:
+        return 0.06, 0.22
+    if 'aashram' in name or 'ashram' in name:
+        return 0.06, 0.28
+
+    # fallback for any unmatched slot name
+    staff_rate = 0.06
+    return staff_rate, profit_rate - staff_rate
 
 # ─── Month label helper (for Excel export titles) ────────────────────────────
 _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -133,33 +156,89 @@ def index():
     return render_template("index.html")
 
 # ─── SLOTS ────────────────────────────────────────────────────────────────────
+
 @app.route("/api/slots", methods=["GET"])
 @login_required
 def get_slots():
+    month_year = request.args.get("month_year") or datetime.date.today().strftime("%Y-%m")
     rows = query("SELECT * FROM funding_slots ORDER BY id")
+
+    daily_agg = query(
+        """SELECT slot_id,
+                  COALESCE(SUM(actual_collected), 0) AS total_income,
+                  COALESCE(SUM(khata_amount), 0)     AS total_khata
+           FROM daily_collections
+           WHERE month_year=%s
+           GROUP BY slot_id""",
+        (month_year,)
+    )
+    daily_map = {r["slot_id"]: r for r in daily_agg}
+
+    cust_agg = query(
+        """SELECT slot_id,
+                  COALESCE(SUM(funding), 0) AS total_funding,
+                  COALESCE(SUM(payment_has_been_done), 0) AS total_paid
+           FROM customers
+           GROUP BY slot_id"""
+    )
+    cust_map = {r["slot_id"]: r for r in cust_agg}
+
+    for s in rows:
+        agg = daily_map.get(s["id"], {"total_income": 0, "total_khata": 0})
+        s["total_income_this_month"] = float(agg["total_income"])
+        s["total_khata_this_month"]  = float(agg["total_khata"])
+
+        rec = cust_map.get(s["id"], {"total_funding": 0, "total_paid": 0})
+        profit_rate = get_profit_rate(s["id"])
+        total_due   = float(rec["total_funding"]) * (1 + profit_rate)
+        total_paid  = float(rec["total_paid"])
+        s["recovery_pct"] = round((total_paid / total_due * 100) if total_due > 0 else 0, 1)
+
     return app.response_class(
         json.dumps(rows, default=decimal_default),
         mimetype="application/json"
     )
 
+
 @app.route("/api/slots/<int:slot_id>", methods=["PUT"])
 @admin_required
 def update_slot(slot_id):
-    data = request.json
+    data = request.json or {}
+
     query(
-        "UPDATE funding_slots SET slot_name=%s, kothi_amount=%s WHERE id=%s",
-        (data.get("slot_name"), data.get("kothi_amount"), slot_id),
+        """
+        UPDATE funding_slots
+        SET
+            slot_name=%s,
+            kothi_amount=%s,
+            received_capital=%s
+        WHERE id=%s
+        """,
+        (
+            data.get("slot_name"),
+            data.get("kothi_amount", 0),
+            data.get("received_capital", 0),
+            slot_id,
+        ),
         commit=True,
     )
-    row = query("SELECT * FROM funding_slots WHERE id=%s", (slot_id,), fetchone=True)
-    return app.response_class(json.dumps(row, default=decimal_default), mimetype="application/json")
+
+    row = query(
+        "SELECT * FROM funding_slots WHERE id=%s",
+        (slot_id,),
+        fetchone=True,
+    )
+
+    return app.response_class(
+        json.dumps(row, default=decimal_default),
+        mimetype="application/json",
+    )
 
 @app.route("/api/slots/summary/<int:slot_id>/<month_year>", methods=["GET"])
 @login_required
 def get_summary(slot_id, month_year):
     profit_rate = get_profit_rate(slot_id)
-    staff_rate  = 0.08
-    net_rate    = profit_rate - staff_rate
+    staff_rate, net_rate = get_staff_and_net_rate(slot_id, profit_rate)
     total_rate  = 1 + profit_rate
 
     row = query(
@@ -169,7 +248,7 @@ def get_summary(slot_id, month_year):
             SUM(c.funding * {total_rate}) AS total_funding_and_profit,
             SUM(c.payment_has_been_done) AS actual_recovery,
             SUM(c.funding * {profit_rate}) AS total_profit_28,
-            SUM(c.funding * {net_rate}) AS total_net_income,
+            SUM(CASE WHEN DATE_FORMAT(c.opening_date, '%Y-%m') = %s THEN c.funding * {net_rate} ELSE 0 END) AS total_net_income,
             SUM(CASE WHEN DATE_FORMAT(c.opening_date, '%Y-%m') = %s AND fs.charges_commission = 1 THEN c.funding * {staff_rate} ELSE 0 END) AS total_staff_commission,
             SUM(c.funding) AS running_funding,
            SUM(c.funding * {total_rate} - c.payment_has_been_done) AS total_balance_recovery,
@@ -177,7 +256,7 @@ def get_summary(slot_id, month_year):
            FROM customers c
            JOIN funding_slots fs ON c.slot_id = fs.id
            WHERE c.slot_id=%s AND c.month_year=%s""",
-        (month_year, month_year, slot_id, month_year),
+        (month_year, month_year, month_year, slot_id, month_year),
         fetchone=True,
     )
     if row:
@@ -213,8 +292,7 @@ def export_excel(slot_id, month_year):
         return jsonify({"error": "Slot not found"}), 404
 
     profit_rate = get_profit_rate(slot_id)
-    staff_rate  = 0.08
-    net_rate    = profit_rate - staff_rate
+    staff_rate, net_rate = get_staff_and_net_rate(slot_id, profit_rate)
     total_rate  = 1 + profit_rate
 
     customers = query(
@@ -237,7 +315,7 @@ def export_excel(slot_id, month_year):
             SUM(c.funding * {total_rate}) AS total_funding_and_profit,
             SUM(c.payment_has_been_done) AS actual_recovery,
             SUM(c.funding * {profit_rate}) AS total_profit_28,
-            SUM(c.funding * {net_rate}) AS total_net_income,
+            SUM(CASE WHEN DATE_FORMAT(c.opening_date, '%Y-%m') = %s THEN c.funding * {net_rate} ELSE 0 END) AS total_net_income,
             SUM(CASE WHEN DATE_FORMAT(c.opening_date, '%Y-%m') = %s AND fs.charges_commission = 1 THEN c.funding * {staff_rate} ELSE 0 END) AS total_staff_commission,
             SUM(c.funding) AS running_funding,
             SUM(c.funding * {total_rate} - c.payment_has_been_done) AS total_balance_recovery,
@@ -245,7 +323,7 @@ def export_excel(slot_id, month_year):
            FROM customers c
            JOIN funding_slots fs ON c.slot_id = fs.id
            WHERE c.slot_id=%s AND c.month_year=%s""",
-        (month_year, month_year, slot_id, month_year),
+        (month_year, month_year, month_year, slot_id, month_year),
         fetchone=True,
     ) or {}
 
@@ -328,7 +406,7 @@ def export_excel(slot_id, month_year):
     r += 1
 
     headers = ["Sl#", "Opening Date", "Customer Name", "Funding", f"Profit ({int(profit_rate*100)}%)",
-               "Staff Comm (8%)", "Total Due", "Payment Done", "Balance", "Net Income", "Status", ""]
+               f"Staff Comm ({int(staff_rate*100)}%)", "Total Due", "Payment Done", "Balance", "Net Income", "Status", ""]
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=r, column=c, value=h)
         cell.font = WHITE_FONT
@@ -442,7 +520,7 @@ def export_excel(slot_id, month_year):
         ("Total Income Collected In This Month", total_daily_income),
         ("Live Balance (after daily)", live_balance),
         (f"Total Profit ({int(profit_rate*100)}%)", float(summary_row.get("total_profit_28") or 0)),
-        ("Staff Commission (8%)", float(summary_row.get("total_staff_commission") or 0)),
+        (f"Staff Commission ({int(staff_rate*100)}%)", float(summary_row.get("total_staff_commission") or 0)),
         (f"Net Income ({int(net_rate*100)}%)", float(summary_row.get("total_net_income") or 0)),
         ("Kothi Capital", float(slot.get("kothi_amount") or 0)),
         ("Recovery Progress", recovery_pct / 100),
@@ -488,8 +566,7 @@ def export_excel(slot_id, month_year):
 @login_required
 def get_customers(slot_id, month_year):
     profit_rate = get_profit_rate(slot_id)
-    staff_rate  = 0.08
-    net_rate    = profit_rate - staff_rate
+    staff_rate, net_rate = get_staff_and_net_rate(slot_id, profit_rate)
     total_rate  = 1 + profit_rate
 
     rows = query(
@@ -547,8 +624,7 @@ def add_customer():
         if new_row.get("opening_date"):
             new_row["opening_date"] = str(new_row["opening_date"])
         profit_rate = get_profit_rate(slot_id)
-        staff_rate  = 0.08
-        net_rate    = profit_rate - staff_rate
+        staff_rate, net_rate = get_staff_and_net_rate(slot_id, profit_rate)
         total_rate  = 1 + profit_rate
         f = float(new_row.get("funding") or 0)
         p = float(new_row.get("payment_has_been_done") or 0)
@@ -632,8 +708,7 @@ def update_customer(cid):
 
     slot_id     = updated.get("slot_id")
     profit_rate = get_profit_rate(slot_id)
-    staff_rate  = 0.08
-    net_rate    = profit_rate - staff_rate
+    staff_rate, net_rate = get_staff_and_net_rate(slot_id, profit_rate)
     total_rate  = 1 + profit_rate
     f = float(updated.get("funding") or 0)
     p = float(updated.get("payment_has_been_done") or 0)
@@ -690,6 +765,7 @@ def get_daily_collections(slot_id, month_year):
             "day_number":       day,
             "amount_collected": income,
             "khata_amount":     khata,
+            "target_income":    float(rec["target_income"]) if rec and rec.get("target_income") is not None else 0,
             "opening_pawana":   opening_pawana_for_day,
             "closing_pawana":   closing_pawana_for_day,
             "note":             rec.get("note") if rec else "",
@@ -752,6 +828,31 @@ def upsert_khata():
            VALUES (%s, %s, %s, 0, %s)
            ON DUPLICATE KEY UPDATE khata_amount=%s""",
         (slot_id, month_year, collection_date, khata, khata),
+        commit=True,
+    )
+    row = query(
+        """SELECT *, DAY(collection_date) AS day_number, actual_collected AS amount_collected
+           FROM daily_collections
+           WHERE slot_id=%s AND collection_date=%s""",
+        (slot_id, collection_date), fetchone=True
+    )
+    return app.response_class(json.dumps(row, default=decimal_default), mimetype="application/json")
+
+@app.route("/api/daily-collections/target", methods=["POST"])
+@admin_required
+def upsert_target():
+    d          = request.json
+    slot_id    = d.get("slot_id")
+    month_year = d.get("month_year")
+    day_number = d.get("day_number")
+    target     = d.get("target_income", 0) or 0
+    y, m = month_year.split("-")
+    collection_date = f"{y}-{m}-{str(day_number).zfill(2)}"
+    query(
+        """INSERT INTO daily_collections (slot_id, month_year, collection_date, actual_collected, khata_amount, target_income)
+           VALUES (%s, %s, %s, 0, 0, %s)
+           ON DUPLICATE KEY UPDATE target_income=%s""",
+        (slot_id, month_year, collection_date, target, target),
         commit=True,
     )
     row = query(
@@ -858,4 +959,4 @@ def carry_forward():
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', debug=True, port=8000)
+    app.run(host='0.0.0.0', debug=False, port=8000)
