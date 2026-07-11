@@ -1356,32 +1356,23 @@ const suggestedTarget = totalRunningFunding / 50;
   tbody.appendChild(spacer);
 
   tbody.querySelectorAll('.collect-input:not(.khata-input):not(.target-input)').forEach(input => {
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const day = parseInt(input.dataset.day);
-      saveDaily(day, input.value, true);
-    }
+  input.addEventListener('change', () => {
+    const day = parseInt(input.dataset.day);
+    saveDaily(day, input.value, false);
   });
 });
 
  tbody.querySelectorAll('.khata-input').forEach(input => {
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const day = parseInt(input.dataset.day);
-      saveKhata(day, input.value, true);
-    }
+  input.addEventListener('change', () => {
+    const day = parseInt(input.dataset.day);
+    saveKhata(day, input.value, false);
   });
 });
 
   tbody.querySelectorAll('.target-input').forEach(input => {
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const day = parseInt(input.dataset.day);
-      saveTarget(day, input.value, true);
-    }
+  input.addEventListener('change', () => {
+    const day = parseInt(input.dataset.day);
+    saveTarget(day, input.value, false);
   });
 });
 
