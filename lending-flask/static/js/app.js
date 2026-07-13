@@ -198,7 +198,62 @@ function renderSlotCards() {
     grid.appendChild(card);
   });
 }
+// ─── Custom plugin: draws a pill-shaped % label above/beside each bar ──
+const percentLabelPlugin = {
+  id: 'percentLabel',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const isMobile = window.innerWidth <= 640;
 
+    chart.data.datasets.forEach((dataset, dsIndex) => {
+      const meta = chart.getDatasetMeta(dsIndex);
+      meta.data.forEach((bar, i) => {
+        const value = Number(dataset.data[i] || 0);
+        const label = `${value}%`;
+
+        ctx.save();
+        ctx.font = '700 11px Sora, sans-serif';
+        const textWidth = ctx.measureText(label).width;
+        const padX = 7, padY = 4;
+        const boxW = textWidth + padX * 2;
+        const boxH = 18;
+
+        let boxX, boxY, textX, textY;
+
+        if (isMobile) {
+          boxX = bar.x + 6;
+          boxY = bar.y - boxH / 2;
+          textX = boxX + padX;
+          textY = bar.y;
+          ctx.textAlign = 'left';
+        } else {
+          boxX = bar.x - boxW / 2;
+          boxY = bar.y - boxH - 6;
+          textX = bar.x;
+          textY = boxY + boxH / 2;
+          ctx.textAlign = 'center';
+        }
+
+        ctx.fillStyle = 'rgba(13,27,62,0.92)';
+        const r = 9;
+        ctx.beginPath();
+        ctx.moveTo(boxX + r, boxY);
+        ctx.arcTo(boxX + boxW, boxY, boxX + boxW, boxY + boxH, r);
+        ctx.arcTo(boxX + boxW, boxY + boxH, boxX, boxY + boxH, r);
+        ctx.arcTo(boxX, boxY + boxH, boxX, boxY, r);
+        ctx.arcTo(boxX, boxY, boxX + boxW, boxY, r);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, textX, textY);
+        ctx.restore();
+      });
+    });
+  }
+};
+Chart.register(percentLabelPlugin);
 let recoveryChartInstance = null;
 function renderRecoveryChart() {
   const canvas = document.getElementById('recoveryChart');
@@ -1163,6 +1218,9 @@ let openingSaveTimer = null;
 let dayNotes = {};
 let activeNotePopover = null;
 
+let incomeNotes = {};
+let activeIncomeNotePopover = null;
+
 function notesKey() {
   return `khata_notes_${activeSlotId}_${monthYear}`;
 }
@@ -1174,6 +1232,17 @@ function saveDayNotes() {
   try { localStorage.setItem(notesKey(), JSON.stringify(dayNotes)); } catch {}
 }
 
+function incomeNotesKey() {
+  return `income_notes_${activeSlotId}_${monthYear}`;
+}
+function loadIncomeNotes() {
+  try { incomeNotes = JSON.parse(localStorage.getItem(incomeNotesKey())) || {}; }
+  catch { incomeNotes = {}; }
+}
+function saveIncomeNotes() {
+  try { localStorage.setItem(incomeNotesKey(), JSON.stringify(incomeNotes)); } catch {}
+}
+
 function closeNotePopover() {
   if (activeNotePopover) {
     activeNotePopover.remove();
@@ -1182,13 +1251,27 @@ function closeNotePopover() {
   }
 }
 function handleNotePopoverOutsideClick(e) {
-  if (activeNotePopover && !activeNotePopover.contains(e.target) && !e.target.classList.contains('note-btn')) {
+  if (activeNotePopover && !activeNotePopover.contains(e.target) && !e.target.classList.contains('khata-note-btn')) {
     closeNotePopover();
+  }
+}
+
+function closeIncomeNotePopover() {
+  if (activeIncomeNotePopover) {
+    activeIncomeNotePopover.remove();
+    activeIncomeNotePopover = null;
+    document.removeEventListener('mousedown', handleIncomeNotePopoverOutsideClick);
+  }
+}
+function handleIncomeNotePopoverOutsideClick(e) {
+  if (activeIncomeNotePopover && !activeIncomeNotePopover.contains(e.target) && !e.target.classList.contains('income-note-btn')) {
+    closeIncomeNotePopover();
   }
 }
 
 function openNotePopover(day, btn) {
   closeNotePopover();
+  closeIncomeNotePopover();
   const existing = dayNotes[day] || '';
   const isAdmin  = currentRole === 'admin';
 
@@ -1271,6 +1354,7 @@ async function loadDailyCollections() {
     dailyData     = [];
   }
   loadDayNotes();
+  loadIncomeNotes();
   renderDailyCollections();
 }
 
@@ -1323,6 +1407,7 @@ const suggestedTarget = totalRunningFunding / 50;
     let achievedClass = pctAchieved >= 100 ? 'achieved-good' : pctAchieved >= 50 ? 'achieved-mid' : 'achieved-low';
 
     const hasNote = !!dayNotes[day];
+    const hasIncomeNote = !!incomeNotes[day];
 
     const tr = document.createElement('tr');
     if (future) tr.classList.add('future-row');
@@ -1331,14 +1416,18 @@ const suggestedTarget = totalRunningFunding / 50;
       <td class="text-left text-muted" style="font-size:0.78rem">${getDateForDay(monthYear, day)}</td>
       <td class="text-right text-sky">₹${fmt(openingPawana)}</td>
       <td class="text-right" style="padding:4px 12px">
-        <input class="collect-input" type="number" value="${income || ''}" placeholder="0"
-          data-day="${day}" ${future ? 'disabled' : ''} />
+        <div class="income-cell">
+          <input class="collect-input" type="number" value="${income || ''}" placeholder="0"
+            data-day="${day}" ${future ? 'disabled' : ''} />
+          <button type="button" class="note-btn income-note-btn ${hasIncomeNote ? 'has-note' : ''}" data-day="${day}"
+            title="${hasIncomeNote ? escHtml(incomeNotes[day]) : 'Add note'}">📝</button>
+        </div>
       </td>
       <td class="text-right" style="padding:4px 12px">
         <div class="khata-cell">
           <input class="collect-input khata-input" type="number" value="${khata || ''}" placeholder="0"
             data-day="${day}" ${future ? 'disabled' : ''} />
-          <button type="button" class="note-btn ${hasNote ? 'has-note' : ''}" data-day="${day}"
+          <button type="button" class="note-btn khata-note-btn ${hasNote ? 'has-note' : ''}" data-day="${day}"
             title="${hasNote ? escHtml(dayNotes[day]) : 'Add note'}">📝</button>
         </div>
       </td>
@@ -1377,12 +1466,75 @@ const suggestedTarget = totalRunningFunding / 50;
 });
 
   // ── Khata note button ──
-  tbody.querySelectorAll('.note-btn').forEach(btn => {
+  tbody.querySelectorAll('.khata-note-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openNotePopover(parseInt(btn.dataset.day), btn);
     });
   });
+
+  // ── Income note button ──
+  tbody.querySelectorAll('.income-note-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openIncomeNotePopover(parseInt(btn.dataset.day), btn);
+    });
+  });
+  function openIncomeNotePopover(day, btn) {
+  closeNotePopover();
+  closeIncomeNotePopover();
+  const existing = incomeNotes[day] || '';
+  const isAdmin  = currentRole === 'admin';
+
+  const pop = document.createElement('div');
+  pop.className = 'note-popover';
+  pop.innerHTML = `
+    <textarea class="note-textarea" placeholder="Add a note for day ${day}…" ${isAdmin ? '' : 'readonly'}>${escHtml(existing)}</textarea>
+    <div class="note-popover-actions">
+      ${isAdmin ? `
+        <button type="button" class="note-btn-delete">Delete</button>
+        <button type="button" class="note-btn-save">Save</button>
+      ` : `<button type="button" class="note-btn-save">Close</button>`}
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  const rect = btn.getBoundingClientRect();
+  const top  = window.scrollY + rect.bottom + 6;
+  let left   = window.scrollX + rect.left - 190;
+  if (left < 8) left = 8;
+  pop.style.position = 'absolute';
+  pop.style.top  = `${top}px`;
+  pop.style.left = `${left}px`;
+
+  activeIncomeNotePopover = pop;
+  const textarea = pop.querySelector('.note-textarea');
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+  pop.querySelector('.note-btn-save').addEventListener('click', () => {
+    if (isAdmin) {
+      const val = textarea.value.trim();
+      if (val) incomeNotes[day] = val; else delete incomeNotes[day];
+      saveIncomeNotes();
+    }
+    closeIncomeNotePopover();
+    renderDailyCollections();
+  });
+
+  const delBtn = pop.querySelector('.note-btn-delete');
+  if (delBtn) {
+    delBtn.addEventListener('click', () => {
+      delete incomeNotes[day];
+      saveIncomeNotes();
+      closeIncomeNotePopover();
+      renderDailyCollections();
+    });
+  }
+
+  textarea.addEventListener('keydown', e => { if (e.key === 'Escape') closeIncomeNotePopover(); });
+  setTimeout(() => document.addEventListener('mousedown', handleIncomeNotePopoverOutsideClick), 0);
+}
 
   const lastDay      = dailyData.find(d => d.day_number === daysInMonth) || {};
   const finalClosing = Number(lastDay.closing_pawana ?? openingAmount);
