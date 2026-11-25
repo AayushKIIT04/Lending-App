@@ -25,55 +25,73 @@ app = Flask(__name__,
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "change-this-to-something-random-and-long")
 CORS(app, supports_credentials=True)
 
-# ─── DB connection ────────────────────────────────────────────────────────────
+
+# ─── DB CONNECTION POOL ──────────────────────────────────────────────────────
+import threading
+from mysql.connector import pooling
+
+ssl_ca = os.getenv("DB_SSL_CA", "").strip()
+ssl_ca_path = None
+
+if ssl_ca.startswith("-----BEGIN"):
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode="w")
+    tmp.write(ssl_ca)
+    tmp.close()
+    ssl_ca_path = tmp.name
+
+db_config = {
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", 3306)),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", ""),
+    "database": os.getenv("DB_NAME", "lending_db"),
+    "connection_timeout": 10,
+}
+
+if ssl_ca_path:
+    db_config["ssl_ca"] = ssl_ca_path
+    db_config["ssl_verify_cert"] = True
+
+_db_pool = None
+_pool_lock = threading.Lock()
+
 def get_db():
-    ssl_ca = os.getenv("DB_SSL_CA", "")
-
-    ssl_ca_path = None
-    if ssl_ca.strip().startswith("-----BEGIN"):
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode='w')
-        tmp.write(ssl_ca)
-        tmp.close()
-        ssl_ca_path = tmp.name
-
-    config = {
-        "host": os.getenv("DB_HOST", "localhost"),
-        "port": int(os.getenv("DB_PORT", 3306)),
-        "user": os.getenv("DB_USER", "root"),
-        "password": os.getenv("DB_PASSWORD", ""),
-        "database": os.getenv("DB_NAME", "lending_db"),
-    }
-    if ssl_ca_path:
-        config["ssl_ca"] = ssl_ca_path
-        config["ssl_verify_cert"] = True
-
-    return mysql.connector.connect(**config)
-
-def decimal_default(obj):
-    if isinstance(obj, Decimal):
-        return float(obj)
-    if isinstance(obj, (datetime.date, datetime.datetime)):
-        return str(obj)
-    if isinstance(obj, datetime.timedelta):
-        return str(obj)
-    if isinstance(obj, bytes):
-        return obj.decode('utf-8', errors='replace')
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+    global _db_pool
+    if _db_pool is None:
+        with _pool_lock:
+            if _db_pool is None:
+                _db_pool = pooling.MySQLConnectionPool(
+                    pool_name="lending_pool",
+                    pool_size=5,
+                    pool_reset_session=True,
+                    **db_config
+                )
+    return _db_pool.get_connection()
 
 def query(sql, params=(), fetchone=False, commit=False):
     conn = get_db()
-    cur = conn.cursor(dictionary=True)
-    cur.execute(sql, params)
-    if commit:
-        conn.commit()
-        last_id = cur.lastrowid
-        cur.close()
+    cur = None
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(sql, params)
+        if commit:
+            conn.commit()
+            return cur.lastrowid
+        return cur.fetchone() if fetchone else cur.fetchall()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        if cur:
+            cur.close()
         conn.close()
-        return last_id
-    result = cur.fetchone() if fetchone else cur.fetchall()
-    cur.close()
-    conn.close()
-    return result
+
+# ─── Decimal JSON helper ─────────────────────────────────────────────────────
+def decimal_default(obj):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
 
 # ─── Profit rate helper ───────────────────────────────────────────────────────
 # ─── Profit rate helper ───────────────────────────────────────────────────────
