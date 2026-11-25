@@ -90,6 +90,10 @@ def query(sql, params=(), fetchone=False, commit=False):
 def decimal_default(obj):
     if isinstance(obj, Decimal):
         return float(obj)
+
+    if isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
+        return obj.isoformat()
+
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
